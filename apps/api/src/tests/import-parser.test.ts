@@ -111,4 +111,66 @@ describe("parseImport", () => {
       expect.arrayContaining(["OP_SECRET_TIMESTAMP_INVALID", "DOUYIN_ID_DUPLICATE_IN_FILE"])
     );
   });
+
+  it("normalizes common Chinese and slash datetime registeredAt values", () => {
+    const result = parseImport(
+      workbookBuffer([
+        {
+          抖音号: "10000000001",
+          注册时间: "13/7/2026 22:29",
+          OP名称: "",
+          OP卡密: "a|b|1782303418",
+          归属人: "小王",
+          售卖状态: "未售卖",
+          备注: ""
+        },
+        {
+          抖音号: "10000000002",
+          注册时间: "2026/7/9 22:26",
+          OP名称: "",
+          OP卡密: "a|b|1782303418",
+          归属人: "小王",
+          售卖状态: "未售卖",
+          备注: ""
+        },
+        {
+          抖音号: "10000000003",
+          注册时间: "2026年6月24日23:15:19",
+          OP名称: "",
+          OP卡密: "a|b|1782303418",
+          归属人: "小王",
+          售卖状态: "未售卖",
+          备注: ""
+        }
+      ]),
+      "accounts.xlsx"
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows.map((row) => row.registeredAt)).toEqual([
+      "2026-07-13",
+      "2026-07-09",
+      "2026-06-24"
+    ]);
+  });
+
+  it("uses Asia/Shanghai calendar date for Excel Date cells", () => {
+    const result = parseImport(
+      workbookBuffer([
+        {
+          抖音号: "10000000004",
+          注册时间: new Date("2026-06-16T15:29:17.000Z"),
+          OP名称: "",
+          OP卡密: "a|b|1782303418",
+          归属人: "小王",
+          售卖状态: "未售卖",
+          备注: ""
+        }
+      ]),
+      "accounts.xlsx"
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]?.registeredAt).toBe("2026-06-16");
+  });
 });

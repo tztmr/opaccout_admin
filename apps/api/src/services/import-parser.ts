@@ -25,9 +25,92 @@ export type ImportParseResult = {
 };
 
 function normalizedDate(value: unknown): string {
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  const text = String(value ?? "").trim().replaceAll("/", "-");
-  return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return shanghaiDate(value);
+  }
+
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+
+  const isoDay = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T].*)?$/);
+  if (isoDay?.[1] && isoDay[2] && isoDay[3]) {
+    return formatDateParts(isoDay[1], isoDay[2], isoDay[3]);
+  }
+
+  const slashYearFirst = text.match(
+    /^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/
+  );
+  if (slashYearFirst?.[1] && slashYearFirst[2] && slashYearFirst[3]) {
+    return formatDateParts(
+      slashYearFirst[1],
+      slashYearFirst[2],
+      slashYearFirst[3]
+    );
+  }
+
+  const slashDayFirst = text.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?$/
+  );
+  if (slashDayFirst?.[1] && slashDayFirst[2] && slashDayFirst[3]) {
+    return formatDateParts(
+      slashDayFirst[3],
+      slashDayFirst[2],
+      slashDayFirst[1]
+    );
+  }
+
+  const chinese = text.match(
+    /^(\d{4})年(\d{1,2})月(\d{1,2})日(?:\s*\d{1,2}:\d{2}(?::\d{2})?)?$/
+  );
+  if (chinese?.[1] && chinese[2] && chinese[3]) {
+    return formatDateParts(chinese[1], chinese[2], chinese[3]);
+  }
+
+  return "";
+}
+
+function formatDateParts(
+  yearText: string,
+  monthText: string,
+  dayText: string
+): string {
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    year < 1000 ||
+    year > 9999 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return "";
+  }
+
+  const candidate = `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  const probe = new Date(`${candidate}T00:00:00.000Z`);
+  if (
+    Number.isNaN(probe.getTime()) ||
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() + 1 !== month ||
+    probe.getUTCDate() !== day
+  ) {
+    return "";
+  }
+  return candidate;
+}
+
+function shanghaiDate(value: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(value);
 }
 
 export function parseImport(buffer: Buffer, fileName: string): ImportParseResult {
@@ -45,7 +128,9 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
   if (!firstSheet) throw new Error("IMPORT_SHEET_MISSING");
   const sourceRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
     defval: "",
-    raw: extension === "csv"
+    // Prefer raw Excel Date cells so locale display strings like "6/16/26"
+    // do not depend on spreadsheet formatting.
+    raw: true
   });
   if (sourceRows.length > MAX_ROWS) throw new Error("IMPORT_ROW_LIMIT_EXCEEDED");
 
