@@ -14,6 +14,10 @@ import { AppError } from "../middleware/errors";
 import type { SecretCipher } from "./encryption";
 import type { DouyinCheckResult } from "./douyin-check";
 import { calculateOpExpiry } from "./op-expiry";
+import {
+  assertBannedSaleStatusChange,
+  resolveDetectedSaleStatus
+} from "./sale-status-policy";
 
 type AuditContext = {
   ip: string;
@@ -128,6 +132,10 @@ export function createAccountsService({
           secUid: detected.secUid,
           accountStatus: detected.accountStatus,
           accountCheckedAt: detected.checkedAt,
+          saleStatus: resolveDetectedSaleStatus(
+            detected.accountStatus,
+            input.saleStatus
+          ),
           opSecret: cipher.encrypt(input.opSecret),
           opExpiresAt: calculateOpExpiry(input.opSecret)
         });
@@ -192,6 +200,7 @@ export function createAccountsService({
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
       const changedFields = Object.keys(patch);
+      assertBannedSaleStatusChange(account.accountStatus, patch.saleStatus);
 
       if (patch.douyinId && patch.douyinId !== account.douyinId) {
         const detected = await checkDouyinId(patch.douyinId);
@@ -199,6 +208,10 @@ export function createAccountsService({
         account.accountStatus = detected.accountStatus;
         account.accountCheckedAt = detected.checkedAt;
         changedFields.push("secUid", "accountStatus", "accountCheckedAt");
+        if (detected.accountStatus === "banned") {
+          patch.saleStatus = "disabled";
+          if (!changedFields.includes("saleStatus")) changedFields.push("saleStatus");
+        }
       }
       if (patch.opSecret) {
         account.opSecret = cipher.encrypt(patch.opSecret);
@@ -254,6 +267,19 @@ export function createAccountsService({
       if (patch.saleStatus) allowedPatch.saleStatus = patch.saleStatus;
       if (patch.owner?.trim()) allowedPatch.owner = patch.owner.trim();
       if (!Object.keys(allowedPatch).length) throw new AppError(400, "BATCH_PATCH_EMPTY", "没有可修改的字段");
+      if (patch.saleStatus && patch.saleStatus !== "disabled") {
+        const lockedCount = await model.countDocuments({
+          _id: { $in: ids },
+          accountStatus: "banned"
+        });
+        if (lockedCount > 0) {
+          throw new AppError(
+            409,
+            "BANNED_ACCOUNT_SALE_STATUS_LOCKED",
+            `${lockedCount} 个封禁账号的售卖状态必须保持为已停用`
+          );
+        }
+      }
       const result = await model.updateMany({ _id: { $in: ids } }, { $set: allowedPatch });
       await writeAudit("account.batch_updated", ids, Object.keys(allowedPatch), context);
       return { updated: result.modifiedCount };
@@ -266,8 +292,17 @@ export function createAccountsService({
       account.secUid = detected.secUid;
       account.accountStatus = detected.accountStatus;
       account.accountCheckedAt = detected.checkedAt;
+      account.saleStatus = resolveDetectedSaleStatus(
+        detected.accountStatus,
+        account.saleStatus
+      );
       await account.save();
-      await writeAudit("account.rechecked", [id], ["secUid", "accountStatus", "accountCheckedAt"], context);
+      await writeAudit(
+        "account.rechecked",
+        [id],
+        ["secUid", "accountStatus", "accountCheckedAt", "saleStatus"],
+        context
+      );
       return toDto(account);
     },
 

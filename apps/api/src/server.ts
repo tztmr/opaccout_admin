@@ -9,10 +9,12 @@ import { createAccountsService } from "./services/accounts";
 import { createDouyinChecker } from "./services/douyin-check";
 import { createSecretCipher } from "./services/encryption";
 import { startImportWorker } from "./services/import-worker";
+import { normalizeBannedSaleStatuses } from "./services/sale-status-policy";
 
 async function main() {
   const config = loadConfig(process.env);
   await mongoose.connect(config.mongoUri);
+  await normalizeBannedSaleStatuses();
   await ImportJobModel.updateMany(
     { status: "running" },
     { $set: { status: "queued" }, $unset: { startedAt: 1 } }
