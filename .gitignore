@@ -1,2 +1,9 @@
 .worktrees/
 .superpowers/
+.env
+node_modules/
+dist/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo

@@ -1,0 +1,4 @@
+{
+  "status": 200,
+  "body": "{\"status_code\":0,\"user_info\":{\"sec_uid\":\"MS4wLjABAAAA-violation-fixture\",\"is_ban\":true,\"punish_remind_info\":{\"is_punish\":true,\"ban_type\":2,\"punish_title\":\"违规处罚说明\"}}}"
+}
