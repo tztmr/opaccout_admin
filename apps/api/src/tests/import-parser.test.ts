@@ -45,6 +45,56 @@ describe("parseImport", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("defaults blank sale status cells to unknown", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-28",
+      OP名称: "",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      售卖状态: "",
+      备注: ""
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.saleStatus).toBe("unknown");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("imports an explicit unknown sale status", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-28",
+      OP名称: "",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      售卖状态: "未知",
+      备注: ""
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.saleStatus).toBe("unknown");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("rejects an unrecognized non-blank sale status", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-28",
+      OP名称: "",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      售卖状态: "随便填写",
+      备注: ""
+    }]), "accounts.xlsx");
+
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.objectContaining({
+        field: "saleStatus",
+        code: "VALIDATION_FAILED"
+      })
+    ]);
+  });
+
   it("reports duplicate IDs and invalid OP timestamps", () => {
     const row = {
       抖音号: "94946893573",

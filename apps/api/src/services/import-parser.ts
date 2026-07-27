@@ -4,6 +4,7 @@ import { calculateOpExpiry } from "./op-expiry";
 
 const MAX_ROWS = 10_000;
 const STATUS_MAP: Record<string, SaleStatus> = {
+  未知: "unknown",
   未售卖: "unsold",
   已售卖: "sold",
   已停用: "disabled",
@@ -55,13 +56,16 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
   sourceRows.forEach((source, index) => {
     const rowNumber = index + 2;
     const douyinId = String(source["抖音号"] ?? "").trim();
+    const saleStatusLabel = String(source["售卖状态"] ?? "").trim();
     const candidate = {
       douyinId,
       registeredAt: normalizedDate(source["注册时间"]),
       opName: String(source["OP名称"] ?? "").trim(),
       opSecret: String(source["OP卡密"] ?? "").trim(),
       owner: String(source["归属人"] ?? "").trim(),
-      saleStatus: STATUS_MAP[String(source["售卖状态"] ?? "").trim()],
+      saleStatus: saleStatusLabel
+        ? STATUS_MAP[saleStatusLabel] ?? saleStatusLabel
+        : undefined,
       remark: String(source["备注"] ?? "").trim()
     };
     const parsed = AccountInputSchema.safeParse(candidate);

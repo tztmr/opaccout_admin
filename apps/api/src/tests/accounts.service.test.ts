@@ -20,7 +20,7 @@ function accountDocument(overrides: Record<string, unknown> = {}) {
     },
     opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
     owner: "小王",
-    saleStatus: "recovered" as const,
+    saleStatus: "unknown" as const,
     accountStatus: "normal" as const,
     accountCheckedAt: new Date("2026-07-27T00:00:00.000Z"),
     remark: "",
@@ -127,7 +127,7 @@ describe("accounts service", () => {
     }, context)).rejects.toThrow();
   });
 
-  it("defaults a normal account to recovered", async () => {
+  it("defaults a normal account to unknown", async () => {
     const create = vi.fn(async (value: Record<string, unknown>) =>
       accountDocument(value)
     );
@@ -144,9 +144,9 @@ describe("accounts service", () => {
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       accountStatus: "normal",
-      saleStatus: "recovered"
+      saleStatus: "unknown"
     }));
-    expect(result.saleStatus).toBe("recovered");
+    expect(result.saleStatus).toBe("unknown");
   });
 
   it("forces a newly detected banned account to disabled", async () => {
@@ -161,7 +161,7 @@ describe("accounts service", () => {
       opName: "",
       opSecret: "a|b|1782303418",
       owner: "小王",
-      saleStatus: "recovered",
+      saleStatus: "unknown",
       remark: ""
     }, context);
 
@@ -181,7 +181,7 @@ describe("accounts service", () => {
 
     const result = await service.update(
       String(account._id),
-      { douyinId: "93180119509", saleStatus: "recovered" },
+      { douyinId: "93180119509", saleStatus: "unknown" },
       context
     );
 
@@ -213,7 +213,7 @@ describe("accounts service", () => {
     const service = createAccountsService(dependencies({ findById }));
 
     await expect(
-      service.update(String(account._id), { saleStatus: "sold" }, context)
+      service.update(String(account._id), { saleStatus: "unknown" }, context)
     ).rejects.toMatchObject({
       status: 409,
       code: "BANNED_ACCOUNT_SALE_STATUS_LOCKED"
@@ -229,7 +229,7 @@ describe("accounts service", () => {
     await expect(
       service.batchUpdate(
         ["507f1f77bcf86cd799439011"],
-        { saleStatus: "sold" },
+        { saleStatus: "unknown" },
         context
       )
     ).rejects.toMatchObject({
