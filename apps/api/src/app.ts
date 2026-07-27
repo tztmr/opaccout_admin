@@ -8,14 +8,25 @@ import { requestIdMiddleware } from "./middleware/request-id";
 import { createAuthRouter } from "./routes/auth";
 import { createAccountsRouter } from "./routes/accounts";
 import type { AccountsService } from "./services/accounts";
+import { createHealthRouter } from "./routes/health";
+import { createAuditLogsRouter } from "./routes/audit-logs";
+import { createSettingsRouter } from "./routes/settings";
+import { createImportsRouter } from "./routes/imports";
+import { createExportsRouter } from "./routes/exports";
+import type { SecretCipher } from "./services/encryption";
 
 type CreateAppOptions = {
   config: AppConfig;
   sessionStore?: Store;
   accountService?: AccountsService;
+  cipher?: SecretCipher;
+  audit?: Parameters<typeof createExportsRouter>[1];
+  isReady?: () => boolean;
 };
 
-export function createApp({ config, sessionStore, accountService }: CreateAppOptions): Express {
+export function createApp({
+  config, sessionStore, accountService, cipher, audit, isReady = () => true
+}: CreateAppOptions): Express {
   const app = express();
   app.set("trust proxy", 1);
   app.use(requestIdMiddleware);
@@ -41,10 +52,15 @@ export function createApp({ config, sessionStore, accountService }: CreateAppOpt
     })
   );
 
+  app.use("/api/health", createHealthRouter(isReady));
   app.use("/api/auth", createAuthRouter(config));
   if (accountService) {
     app.use("/api/accounts", requireAdmin, createAccountsRouter(accountService));
   }
+  if (cipher) app.use("/api/imports", requireAdmin, createImportsRouter(cipher));
+  if (cipher && audit) app.use("/api/exports", requireAdmin, createExportsRouter(cipher, audit));
+  app.use("/api/audit-logs", requireAdmin, createAuditLogsRouter());
+  app.use("/api/settings", requireAdmin, createSettingsRouter());
   app.get("/api/test/protected", requireAdmin, (_req, res) => {
     res.json({ ok: true });
   });

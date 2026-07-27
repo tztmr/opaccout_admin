@@ -1,0 +1,60 @@
+import { createServer } from "node:http";
+import MongoStore from "connect-mongo";
+import mongoose from "mongoose";
+import { createApp } from "./app";
+import { loadConfig } from "./config";
+import { ImportJobModel } from "./models/import-job";
+import { auditService } from "./services/audit";
+import { createAccountsService } from "./services/accounts";
+import { createDouyinChecker } from "./services/douyin-check";
+import { createSecretCipher } from "./services/encryption";
+import { startImportWorker } from "./services/import-worker";
+
+async function main() {
+  const config = loadConfig(process.env);
+  await mongoose.connect(config.mongoUri);
+  await ImportJobModel.updateMany(
+    { status: "running" },
+    { $set: { status: "queued" }, $unset: { startedAt: 1 } }
+  );
+  const cipher = createSecretCipher(config.fieldEncryptionKey);
+  const checkDouyinId = createDouyinChecker({ baseUrl: config.douyinCheckApiUrl });
+  const accounts = createAccountsService({
+    checkDouyinId,
+    cipher,
+    audit: auditService
+  });
+  const sessionStore = MongoStore.create({
+    mongoUrl: config.mongoUri,
+    collectionName: "sessions",
+    ttl: config.sessionHours * 60 * 60
+  });
+  const app = createApp({
+    config,
+    sessionStore,
+    accountService: accounts,
+    cipher,
+    audit: auditService,
+    isReady: () => mongoose.connection.readyState === 1
+  });
+  const server = createServer(app);
+  const stopWorker = startImportWorker(accounts, cipher);
+
+  await new Promise<void>((resolve) => server.listen(config.port, "0.0.0.0", resolve));
+  process.stdout.write(`API listening on ${config.port}\n`);
+
+  const shutdown = async () => {
+    stopWorker();
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve())
+    );
+    await mongoose.disconnect();
+  };
+  process.once("SIGTERM", () => void shutdown().finally(() => process.exit(0)));
+  process.once("SIGINT", () => void shutdown().finally(() => process.exit(0)));
+}
+
+main().catch((error) => {
+  process.stderr.write(`API startup failed: ${error instanceof Error ? error.message : "unknown"}\n`);
+  process.exit(1);
+});
