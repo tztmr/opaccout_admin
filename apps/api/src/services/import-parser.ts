@@ -34,12 +34,17 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
   if (!extension || !["xlsx", "xls", "csv"].includes(extension)) {
     throw new Error("IMPORT_FILE_TYPE_UNSUPPORTED");
   }
-  const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  const workbook = extension === "csv"
+    ? XLSX.read(buffer.toString("utf8").replace(/^\uFEFF/, ""), {
+        type: "string",
+        cellDates: true
+      })
+    : XLSX.read(buffer, { type: "buffer", cellDates: true });
   const firstSheet = workbook.Sheets[workbook.SheetNames[0] ?? ""];
   if (!firstSheet) throw new Error("IMPORT_SHEET_MISSING");
   const sourceRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, {
     defval: "",
-    raw: false
+    raw: extension === "csv"
   });
   if (sourceRows.length > MAX_ROWS) throw new Error("IMPORT_ROW_LIMIT_EXCEEDED");
 

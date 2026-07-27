@@ -9,6 +9,23 @@ function workbookBuffer(rows: Record<string, unknown>[]): Buffer {
 }
 
 describe("parseImport", () => {
+  it("reads a UTF-8 Chinese CSV without a BOM", () => {
+    const csv = [
+      "抖音号,注册时间,OP名称,OP卡密,归属人,售卖状态,备注",
+      "94946893573,2026-07-27,星图运营,a|b|1782303418,小王,未售卖,正常账号"
+    ].join("\n");
+
+    const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv");
+
+    expect(result.rows[0]).toMatchObject({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      owner: "小王",
+      saleStatus: "unsold"
+    });
+    expect(result.errors).toEqual([]);
+  });
+
   it("maps approved Chinese columns and optional OP name", () => {
     const result = parseImport(workbookBuffer([{
       抖音号: "94946893573",

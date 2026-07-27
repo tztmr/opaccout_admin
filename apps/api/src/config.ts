@@ -7,6 +7,7 @@ const EnvironmentSchema = z.object({
   ADMIN_PASSWORD: z.string().min(12).max(4096),
   SESSION_SECRET: z.string().min(32),
   SESSION_HOURS: z.coerce.number().int().min(1).max(168).default(12),
+  COOKIE_SECURE: z.enum(["true", "false"]).optional(),
   FIELD_ENCRYPTION_KEY: z.string().min(1),
   MONGO_URI: z.string().min(1),
   DOUYIN_CHECK_API_URL: z.url().refine((value) => new URL(value).protocol === "https:", {
@@ -45,6 +46,8 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string>): App
     fieldEncryptionKey,
     mongoUri: parsed.MONGO_URI,
     douyinCheckApiUrl: new URL(parsed.DOUYIN_CHECK_API_URL),
-    cookieSecure: parsed.NODE_ENV === "production"
+    cookieSecure: parsed.COOKIE_SECURE
+      ? parsed.COOKIE_SECURE === "true"
+      : parsed.NODE_ENV === "production"
   };
 }
