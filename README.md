@@ -37,7 +37,7 @@
 cp .env.example .env
 ```
 
-编辑 `.env`，必须替换管理员密码、MongoDB 密码、会话密钥和字段加密密钥。生成加密密钥：
+编辑 `.env`，必须替换 MongoDB 密码、会话密钥和字段加密密钥。管理员账号不在这里配置，首次打开后台时注册。生成加密密钥：
 
 ```bash
 openssl rand -base64 32
@@ -60,7 +60,9 @@ QQ API 地址必须使用 HTTPS，超时时间允许设置为 100 至 30000 毫�
 DOCKER_BUILDKIT=0 docker compose up -d --build
 ```
 
-默认访问 `http://localhost:8080`，使用 `.env` 中唯一的 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 登录。只有 Web 端口暴露给宿主机，API 和 MongoDB 不暴露宿主端口。
+首次部署后打开 `http://localhost:8080`。如果 MongoDB 中还没有管理员，页面会自动显示“注册管理员”；注册成功后自动登录，注册页面随即关闭。之后重启或重新构建容器都只显示登录页，因为管理员凭据保存在 `mongo_data` 数据卷中。只有 Web 端口暴露给宿主机，API 和 MongoDB 不暴露宿主端口。
+
+系统不使用 `ADMIN_USERNAME`、`ADMIN_PASSWORD`，也不提供网页密码重置。请备份 MongoDB 数据卷和管理员密码；丢失密码需要由运维人员直接执行受控恢复，不能通过重新添加旧环境变量绕过登录。
 
 查看状态与日志：
 
