@@ -119,6 +119,8 @@ tbody tr:hover { background: #fafcff; }
 .login-card > p { color: var(--muted); font-size: 13px; }
 .login-card button { margin-top: 4px; }
 .form-error { padding: 10px 11px; border-radius: 6px; color: #a12645; background: #fff0f3; font-size: 13px; }
+.auth-state-error { gap: 12px; }
+.auth-state-error .form-error { margin: 0; }
 
 .import-grid { display: grid; grid-template-columns: minmax(0,1.7fr) minmax(260px,1fr); gap: 14px; margin-bottom: 15px; }
 .upload-card, .guide-card, .settings-card { border: 1px solid var(--border); border-radius: 7px; background: #fff; }

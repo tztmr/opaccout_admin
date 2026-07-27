@@ -73,7 +73,7 @@ function SettingsPage() {
   return <section>
     <header className="page-head"><div><h1>系统设置</h1><p>调整后台列表和登录会话的基础参数</p></div></header>
     <form className="settings-card" onSubmit={submit} key={query.data?.updatedAt||"loading"}>
-      <div><h2>后台偏好</h2><p>管理员账号和密码由 Docker 环境变量管理，不会显示在页面中。</p></div>
+      <div><h2>后台偏好</h2><p>管理员账号和密码在首次注册后加密保存在 MongoDB 中，不会显示在页面中。</p></div>
       {notice&&<div className="notice-static">{notice}</div>}
       <label>默认每页条数<input type="number" name="defaultPageSize" min={10} max={100} defaultValue={query.data?.defaultPageSize??20} disabled={query.isLoading}/><small>范围 10–100 条</small></label>
       <label>登录会话时长<input type="number" name="sessionHours" min={1} max={168} defaultValue={query.data?.sessionHours??12} disabled={query.isLoading}/><small>范围 1–168 小时</small></label>

@@ -5,7 +5,7 @@ import { api } from "../api";
 import { AccountsPage } from "../features/AccountsPage";
 import { ImportsPage } from "../features/ImportsPage";
 import { SimplePage } from "../features/SimplePage";
-import { LoginPage } from "../features/LoginPage";
+import { AuthEntry } from "../features/AuthEntry";
 
 type Session = { authenticated: true; username: string };
 
@@ -15,10 +15,15 @@ function Shell() {
   const session = useQuery({
     queryKey: ["session"],
     queryFn: () => api<Session>("/api/auth/session"),
-    retry: false
+    retry: false,
+    staleTime: 30_000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false
   });
-  if (session.isLoading) return <div className="screen-center">正在加载…</div>;
-  if (session.isError) return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  if (session.isPending) return <div className="screen-center">正在加载…</div>;
+  if (!session.data) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+  }
 
   const logout = async () => {
     await api("/api/auth/logout", { method: "POST" });
@@ -51,7 +56,8 @@ function Shell() {
 
 export function App() {
   return <Routes>
-    <Route path="/login" element={<LoginPage/>}/>
+    <Route path="/setup" element={<AuthEntry mode="setup" />} />
+    <Route path="/login" element={<AuthEntry mode="login" />} />
     <Route path="/*" element={<Shell/>}/>
   </Routes>;
 }

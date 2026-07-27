@@ -1,18 +1,29 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setError("");
     const data = new FormData(event.currentTarget);
     try {
-      await api("/api/auth/login", { method: "POST", body: JSON.stringify({
-        username: data.get("username"), password: data.get("password")
-      })});
+      const session = await api<{ authenticated: true; username: string }>(
+        "/api/auth/login",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            username: data.get("username"),
+            password: data.get("password")
+          })
+        }
+      );
+      queryClient.setQueryData(["session"], session);
+      await queryClient.cancelQueries({ queryKey: ["session"] });
       navigate("/accounts", { replace: true });
     } catch (value) { setError(value instanceof Error ? value.message : "登录失败"); }
     finally { setBusy(false); }
