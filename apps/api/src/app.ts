@@ -6,13 +6,16 @@ import { requireAdmin } from "./middleware/auth";
 import { errorHandler, notFoundHandler } from "./middleware/errors";
 import { requestIdMiddleware } from "./middleware/request-id";
 import { createAuthRouter } from "./routes/auth";
+import { createAccountsRouter } from "./routes/accounts";
+import type { AccountsService } from "./services/accounts";
 
 type CreateAppOptions = {
   config: AppConfig;
   sessionStore?: Store;
+  accountService?: AccountsService;
 };
 
-export function createApp({ config, sessionStore }: CreateAppOptions): Express {
+export function createApp({ config, sessionStore, accountService }: CreateAppOptions): Express {
   const app = express();
   app.set("trust proxy", 1);
   app.use(requestIdMiddleware);
@@ -39,6 +42,9 @@ export function createApp({ config, sessionStore }: CreateAppOptions): Express {
   );
 
   app.use("/api/auth", createAuthRouter(config));
+  if (accountService) {
+    app.use("/api/accounts", requireAdmin, createAccountsRouter(accountService));
+  }
   app.get("/api/test/protected", requireAdmin, (_req, res) => {
     res.json({ ok: true });
   });
