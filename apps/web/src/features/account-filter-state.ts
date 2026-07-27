@@ -1,3 +1,7 @@
+import type { SaleStatus } from "@douyin-admin/shared";
+
+export const DEFAULT_ACCOUNT_SALE_STATUS: SaleStatus = "unknown";
+
 const FILTER_KEYS = [
   "keyword",
   "saleStatus",

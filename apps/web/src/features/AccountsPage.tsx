@@ -5,10 +5,21 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { AccountDto, AccountStats, PagedResponse } from "@douyin-admin/shared";
 import { ACCOUNT_STATUS_LABELS, SALE_STATUS_LABELS } from "@douyin-admin/shared";
 import { api } from "../api";
-import { buildAccountExportParams } from "./account-filter-state";
+import {
+  buildAccountExportParams,
+  DEFAULT_ACCOUNT_SALE_STATUS
+} from "./account-filter-state";
 
 type ListResponse = PagedResponse<AccountDto> & { stats: AccountStats };
-const blank = { douyinId:"", registeredAt:new Date().toISOString().slice(0,10), opName:"", opSecret:"", owner:"", saleStatus:"recovered", remark:"" };
+const blank = {
+  douyinId: "",
+  registeredAt: new Date().toISOString().slice(0, 10),
+  opName: "",
+  opSecret: "",
+  owner: "",
+  saleStatus: DEFAULT_ACCOUNT_SALE_STATUS,
+  remark: ""
+};
 type AccountFormValue = typeof blank;
 type AccountSubmitValue = Omit<AccountFormValue, "opSecret"> & { opSecret?: string };
 
@@ -50,7 +61,7 @@ export function AccountsPage() {
     if(action==="delete"&&!confirm(`确定删除选中的 ${ids.length} 条账号吗？`))return;
     if(action==="recheck"){await api("/api/accounts/batch-recheck",{method:"POST",body:JSON.stringify({ids})});setMessage(`已完成 ${ids.length} 条账号检测`)}
     if(action==="delete"){await api("/api/accounts/batch-delete",{method:"POST",body:JSON.stringify({ids})});setMessage(`已删除 ${ids.length} 条账号`)}
-    if(action==="status"){const value=prompt("请输入售卖状态：未售卖 / 已售卖 / 已停用 / 已找回");const key=Object.entries(SALE_STATUS_LABELS).find(([,label])=>label===value)?.[0];if(!key)return;await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,saleStatus:key})});setMessage(`已修改 ${ids.length} 条售卖状态`)}
+    if(action==="status"){const value=prompt(`请输入售卖状态：${Object.values(SALE_STATUS_LABELS).join(" / ")}`);const key=Object.entries(SALE_STATUS_LABELS).find(([,label])=>label===value)?.[0];if(!key)return;await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,saleStatus:key})});setMessage(`已修改 ${ids.length} 条售卖状态`)}
     if(action==="owner"){const owner=prompt("请输入新的归属人");if(!owner?.trim())return;await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,owner:owner.trim()})});setMessage(`已修改 ${ids.length} 条归属人`)}
     setSelected(new Set());void client.invalidateQueries({queryKey:["accounts"]});if(action==="owner"||action==="delete")void client.invalidateQueries({queryKey:["account-owners"]});
   };
@@ -91,7 +102,7 @@ function AccountDrawer({state,owners,busy,close,submit}:{state:{mode:"create"|"e
   const [detected,setDetected]=useState<{secUid:string;accountStatus:string}|null>(state.mode==="edit"?{secUid:"已保存",accountStatus:"按需重新检测"}:null);
   const [checking,setChecking]=useState(false);
   const check=async(form:HTMLFormElement)=>{const id=String(new FormData(form).get("douyinId")||"");setChecking(true);try{setDetected(await api("/api/accounts/check-douyin",{method:"POST",body:JSON.stringify({douyinId:id})}))}finally{setChecking(false)}};
-  const onSubmit=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!detected&&state.mode==="create")return;const d=new FormData(event.currentTarget);const opSecret=String(d.get("opSecret")||"");const value:AccountSubmitValue={douyinId:String(d.get("douyinId")),registeredAt:String(d.get("registeredAt")),opName:String(d.get("opName")),owner:String(d.get("owner")),saleStatus:String(d.get("saleStatus")),remark:String(d.get("remark"))};if(opSecret)value.opSecret=opSecret;submit(value)};
+  const onSubmit=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!detected&&state.mode==="create")return;const d=new FormData(event.currentTarget);const opSecret=String(d.get("opSecret")||"");const value:AccountSubmitValue={douyinId:String(d.get("douyinId")),registeredAt:String(d.get("registeredAt")),opName:String(d.get("opName")),owner:String(d.get("owner")),saleStatus:String(d.get("saleStatus")) as AccountFormValue["saleStatus"],remark:String(d.get("remark"))};if(opSecret)value.opSecret=opSecret;submit(value)};
   return <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)close()}}><form className="drawer" onSubmit={onSubmit}><header><div><h2>{state.mode==="create"?"新增账号":"编辑账号"}</h2><p>派生字段由服务端自动计算</p></div><button type="button" className="icon-button" onClick={close}><X/></button></header>
     <div className="form-grid"><label>抖音号<div className="input-action"><input name="douyinId" defaultValue={state.value.douyinId} required/><button type="button" onClick={e=>check(e.currentTarget.form!)} disabled={checking}>{checking?"检测中":"检测"}</button></div></label>
     {detected&&<div className="detected">sec_uid：{detected.secUid}<br/>账号状态：{ACCOUNT_STATUS_LABELS[detected.accountStatus as keyof typeof ACCOUNT_STATUS_LABELS]??detected.accountStatus}</div>}
