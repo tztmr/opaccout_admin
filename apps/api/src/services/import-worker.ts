@@ -2,10 +2,31 @@ import type { AccountInput } from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
 import { ImportJobModel } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
-import type { AccountsService } from "./accounts";
+import type { AccountsService, AuditContext } from "./accounts";
 import type { EncryptedValue, SecretCipher } from "./encryption";
 
 type StagedRow = Omit<AccountInput, "opSecret"> & { opSecret: EncryptedValue };
+export type ImportRowOutcome = "created" | "updated" | "skipped";
+
+export async function processImportRow(
+  accounts: AccountsService,
+  input: AccountInput,
+  duplicateStrategy: "skip" | "update",
+  context: AuditContext,
+  findExisting: (
+    douyinId: string
+  ) => Promise<{ _id: unknown } | null> = async (douyinId) =>
+    AccountModel.findOne({ douyinId }).select("_id").lean()
+): Promise<ImportRowOutcome> {
+  const existing = await findExisting(input.douyinId);
+  if (existing && duplicateStrategy === "skip") return "skipped";
+  if (existing) {
+    await accounts.update(String(existing._id), input, context);
+    return "updated";
+  }
+  await accounts.create(input, context);
+  return "created";
+}
 
 export async function processNextImportJob(
   accounts: AccountsService,
@@ -30,23 +51,17 @@ export async function processNextImportJob(
   for (const raw of preview.stagedRows as StagedRow[]) {
     const input: AccountInput = { ...raw, opSecret: cipher.decrypt(raw.opSecret) };
     try {
-      await accounts.create(input, context);
-      job.createdCount += 1;
-    } catch (error) {
-      const code = error instanceof Error ? error.message : "IMPORT_ROW_FAILED";
-      if (job.duplicateStrategy === "update" && (code.includes("已存在") || code.includes("DUPLICATE"))) {
-        const existing = await AccountModel.findOne({ douyinId: input.douyinId }).select("_id").lean();
-        if (existing) {
-          await accounts.update(String(existing._id), input, context);
-          job.updatedCount += 1;
-        } else {
-          job.failedCount += 1;
-        }
-      } else if (job.duplicateStrategy === "skip" && (code.includes("已存在") || code.includes("DUPLICATE"))) {
-        job.skippedCount += 1;
-      } else {
-        job.failedCount += 1;
-      }
+      const outcome = await processImportRow(
+        accounts,
+        input,
+        job.duplicateStrategy,
+        context
+      );
+      if (outcome === "created") job.createdCount += 1;
+      if (outcome === "updated") job.updatedCount += 1;
+      if (outcome === "skipped") job.skippedCount += 1;
+    } catch {
+      job.failedCount += 1;
     }
     job.processed += 1;
     if (job.processed % 25 === 0) await job.save();
