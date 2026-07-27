@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { Model } from "mongoose";
 import type { AccountRecord } from "../models/account";
 import { createAccountsService } from "../services/accounts";
+import type { OpProfileCheckResult } from "../services/op-profile";
 
 const context = { ip: "127.0.0.1", userAgent: "test", requestId: "request-id" };
 
@@ -45,6 +46,10 @@ function dependencies(
       accountStatus,
       checkedAt: new Date("2026-07-27T01:00:00.000Z")
     })),
+    checkOpProfile: vi.fn<() => Promise<OpProfileCheckResult>>(async () => ({
+      kind: "success",
+      nickname: "API昵称"
+    })),
     cipher: {
       encrypt: vi.fn(() => ({
         version: 1 as const,
@@ -66,6 +71,10 @@ describe("accounts service", () => {
       createdAt: new Date("2026-07-27T00:00:00.000Z"),
       updatedAt: new Date("2026-07-27T00:00:00.000Z")
     }));
+    const checkOpProfile = vi.fn(async () => ({
+      kind: "success" as const,
+      nickname: "API昵称"
+    }));
     const checkDouyinId = vi.fn(async () => ({
       secUid: "MS4wLjABAAAA-fixture",
       accountStatus: "normal" as const,
@@ -81,6 +90,7 @@ describe("accounts service", () => {
     const service = createAccountsService({
       model: { create } as unknown as Model<AccountRecord>,
       checkDouyinId,
+      checkOpProfile,
       cipher: { encrypt, decrypt: vi.fn() },
       audit: { write: auditWrite }
     });
@@ -96,6 +106,7 @@ describe("accounts service", () => {
     }, context);
 
     expect(checkDouyinId).toHaveBeenCalledWith("94946893573");
+    expect(checkOpProfile).toHaveBeenCalledWith("a|b|1782303418");
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       secUid: "MS4wLjABAAAA-fixture",
       accountStatus: "normal",
@@ -110,6 +121,7 @@ describe("accounts service", () => {
     const service = createAccountsService({
       model: {} as Model<AccountRecord>,
       checkDouyinId: vi.fn(),
+      checkOpProfile: vi.fn(),
       cipher: { encrypt: vi.fn(), decrypt: vi.fn() },
       audit: { write: vi.fn() }
     });
@@ -125,6 +137,119 @@ describe("accounts service", () => {
       saleStatus: "unsold",
       remark: ""
     }, context)).rejects.toThrow();
+  });
+
+  it("persists the API nickname for a newly created account", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument(value)
+    );
+    const deps = dependencies({ create });
+    deps.checkOpProfile.mockResolvedValue({
+      kind: "success",
+      nickname: "API昵称"
+    });
+    const service = createAccountsService(deps);
+
+    await service.create({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-28",
+      opName: "提交名称",
+      opSecret: "openid|token|pay|pfkey|1782303418",
+      owner: "小王",
+      saleStatus: "unknown",
+      remark: ""
+    }, context);
+
+    expect(deps.checkOpProfile).toHaveBeenCalledWith(
+      "openid|token|pay|pfkey|1782303418"
+    );
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      opName: "API昵称",
+      saleStatus: "unknown"
+    }));
+  });
+
+  it("forces disabled when OP returns invalid-openid", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument(value)
+    );
+    const deps = dependencies({ create });
+    deps.checkOpProfile.mockResolvedValue({ kind: "invalid-openid" });
+    const service = createAccountsService(deps);
+
+    const result = await service.create({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-28",
+      opName: "提交名称",
+      opSecret: "openid|token|pay|pfkey|1782303418",
+      owner: "小王",
+      saleStatus: "sold",
+      remark: "原备注"
+    }, context);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      opName: "提交名称",
+      saleStatus: "disabled",
+      remark: "原备注"
+    }));
+    expect(result.saleStatus).toBe("disabled");
+  });
+
+  it("appends another OP ret message before create", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument(value)
+    );
+    const deps = dependencies({ create });
+    deps.checkOpProfile.mockResolvedValue({
+      kind: "message",
+      message: "token is invalid"
+    });
+    const service = createAccountsService(deps);
+
+    await service.create({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-28",
+      opName: "提交名称",
+      opSecret: "openid|token|pay|pfkey|1782303418",
+      owner: "小王",
+      saleStatus: "unknown",
+      remark: "原备注"
+    }, context);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      opName: "提交名称",
+      saleStatus: "unknown",
+      remark: "原备注 | OP: token is invalid"
+    }));
+  });
+
+  it("keeps a banned Douyin account disabled after OP success", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument(value)
+    );
+    const deps = dependencies({ create }, "banned");
+    deps.checkOpProfile.mockResolvedValue({
+      kind: "success",
+      nickname: "API昵称"
+    });
+    const service = createAccountsService(deps);
+
+    const result = await service.create({
+      douyinId: "93180119509",
+      registeredAt: "2026-07-28",
+      opName: "提交名称",
+      opSecret: "openid|token|pay|pfkey|1782303418",
+      owner: "小王",
+      saleStatus: "sold",
+      remark: ""
+    }, context);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      opName: "API昵称",
+      accountStatus: "banned",
+      saleStatus: "disabled"
+    }));
+    expect(result.saleStatus).toBe("disabled");
   });
 
   it("defaults a normal account to unknown", async () => {
@@ -188,6 +313,23 @@ describe("accounts service", () => {
     expect(account.save).toHaveBeenCalledOnce();
     expect(result.accountStatus).toBe("banned");
     expect(result.saleStatus).toBe("disabled");
+  });
+
+  it("does not query OP when editing an existing account", async () => {
+    const account = accountDocument();
+    const deps = dependencies({
+      findById: vi.fn(async () => account)
+    });
+    const service = createAccountsService(deps);
+
+    await service.update(
+      String(account._id),
+      { opSecret: "new-openid|new-token|pay|pfkey|1782303418" },
+      context
+    );
+
+    expect(deps.checkOpProfile).not.toHaveBeenCalled();
+    expect(account.save).toHaveBeenCalledOnce();
   });
 
   it("forces disabled when recheck detects a banned account", async () => {

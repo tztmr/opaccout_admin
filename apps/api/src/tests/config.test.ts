@@ -21,6 +21,11 @@ describe("loadConfig", () => {
     expect(config.port).toBe(3000);
     expect(config.cookieSecure).toBe(false);
     expect(config.fieldEncryptionKey).toHaveLength(32);
+    expect(config.qqOpProfileApiUrl.href).toBe(
+      "https://graph.qq.com/user/get_simple_userinfo"
+    );
+    expect(config.qqOpAppId).toBe("1105602870");
+    expect(config.qqOpProfileTimeoutMs).toBe(5000);
   });
 
   it("requires an HTTPS Douyin API URL", () => {
@@ -36,5 +41,24 @@ describe("loadConfig", () => {
         FIELD_ENCRYPTION_KEY: randomBytes(16).toString("base64")
       })
     ).toThrow("FIELD_ENCRYPTION_KEY");
+  });
+
+  it("requires an HTTPS QQ OP profile API URL", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        QQ_OP_PROFILE_API_URL:
+          "http://graph.qq.com/user/get_simple_userinfo"
+      })
+    ).toThrow("QQ_OP_PROFILE_API_URL");
+  });
+
+  it("bounds the QQ OP timeout", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        QQ_OP_PROFILE_TIMEOUT_MS: "99"
+      })
+    ).toThrow();
   });
 });

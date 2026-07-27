@@ -11,5 +11,10 @@ export const testConfig: AppConfig = {
   fieldEncryptionKey: randomBytes(32),
   mongoUri: "mongodb://unused/test",
   douyinCheckApiUrl: new URL("https://unid.tztright.top/check"),
+  qqOpProfileApiUrl: new URL(
+    "https://graph.qq.com/user/get_simple_userinfo"
+  ),
+  qqOpAppId: "1105602870",
+  qqOpProfileTimeoutMs: 5000,
   cookieSecure: false
 };

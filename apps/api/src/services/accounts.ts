@@ -14,6 +14,8 @@ import { AppError } from "../middleware/errors";
 import type { SecretCipher } from "./encryption";
 import type { DouyinCheckResult } from "./douyin-check";
 import { calculateOpExpiry } from "./op-expiry";
+import type { OpProfileCheckResult } from "./op-profile";
+import { applyOpProfileResult } from "./op-profile-policy";
 import {
   assertBannedSaleStatusChange,
   resolveDetectedSaleStatus
@@ -41,6 +43,7 @@ type AuditService = {
 type AccountServiceDependencies = {
   model?: Model<AccountRecord>;
   checkDouyinId(douyinId: string): Promise<DouyinCheckResult>;
+  checkOpProfile(opSecret: string): Promise<OpProfileCheckResult>;
   cipher: SecretCipher;
   audit: AuditService;
 };
@@ -95,6 +98,7 @@ function duplicateError(error: unknown): AppError | undefined {
 export function createAccountsService({
   model = AccountModel,
   checkDouyinId,
+  checkOpProfile,
   cipher,
   audit
 }: AccountServiceDependencies) {
@@ -124,20 +128,24 @@ export function createAccountsService({
 
     async create(rawInput: unknown, context: AuditContext): Promise<AccountDto> {
       const input = AccountInputSchema.parse(rawInput);
-      const detected = await checkDouyinId(input.douyinId);
+      const [detected, opResult] = await Promise.all([
+        checkDouyinId(input.douyinId),
+        checkOpProfile(input.opSecret)
+      ]);
+      const prepared = applyOpProfileResult(input, opResult);
       try {
         const created = await model.create({
-          ...input,
-          registeredAt: new Date(`${input.registeredAt}T00:00:00.000Z`),
+          ...prepared,
+          registeredAt: new Date(`${prepared.registeredAt}T00:00:00.000Z`),
           secUid: detected.secUid,
           accountStatus: detected.accountStatus,
           accountCheckedAt: detected.checkedAt,
           saleStatus: resolveDetectedSaleStatus(
             detected.accountStatus,
-            input.saleStatus
+            prepared.saleStatus
           ),
-          opSecret: cipher.encrypt(input.opSecret),
-          opExpiresAt: calculateOpExpiry(input.opSecret)
+          opSecret: cipher.encrypt(prepared.opSecret),
+          opExpiresAt: calculateOpExpiry(prepared.opSecret)
         });
         await writeAudit(
           "account.created",

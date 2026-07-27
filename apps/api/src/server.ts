@@ -9,6 +9,7 @@ import { createAccountsService } from "./services/accounts";
 import { createDouyinChecker } from "./services/douyin-check";
 import { createSecretCipher } from "./services/encryption";
 import { startImportWorker } from "./services/import-worker";
+import { createOpProfileChecker } from "./services/op-profile";
 import { normalizeBannedSaleStatuses } from "./services/sale-status-policy";
 
 async function main() {
@@ -21,8 +22,14 @@ async function main() {
   );
   const cipher = createSecretCipher(config.fieldEncryptionKey);
   const checkDouyinId = createDouyinChecker({ baseUrl: config.douyinCheckApiUrl });
+  const checkOpProfile = createOpProfileChecker({
+    baseUrl: config.qqOpProfileApiUrl,
+    appId: config.qqOpAppId,
+    timeoutMs: config.qqOpProfileTimeoutMs
+  });
   const accounts = createAccountsService({
     checkDouyinId,
+    checkOpProfile,
     cipher,
     audit: auditService
   });
