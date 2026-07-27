@@ -136,6 +136,7 @@ tbody tr:hover { background: #fafcff; }
 .preview-panel { padding-bottom: 16px; }
 .error-list { display: flex; gap: 10px; margin: 14px 17px; padding: 12px; border-radius: 6px; color: #9b2546; background: #fff1f4; font-size: 12px; }
 .error-list p { margin: 0 0 4px; }
+.import-failure-cell { max-width: 320px; white-space: normal; line-height: 1.45; color: #9b2546; }
 .preview-options { display: flex; align-items: center; gap: 18px; padding: 4px 17px 0; font-size: 13px; }
 .preview-options label { display: flex; align-items: center; gap: 6px; }
 .preview-options .primary { margin-left: auto; }

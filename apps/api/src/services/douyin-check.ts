@@ -94,13 +94,17 @@ type DouyinCheckerOptions = {
   fetchImpl?: typeof fetch;
   now?: () => Date;
   timeoutMs?: number;
+  maxAttempts?: number;
+  retryDelayMs?: number;
 };
 
 export function createDouyinChecker({
   baseUrl,
   fetchImpl = fetch,
   now = () => new Date(),
-  timeoutMs = 10_000
+  timeoutMs = 10_000,
+  maxAttempts = 3,
+  retryDelayMs = 400
 }: DouyinCheckerOptions) {
   return async function checkDouyinId(
     douyinId: string,
@@ -109,8 +113,9 @@ export function createDouyinChecker({
     const requestUrl = new URL(baseUrl);
     requestUrl.searchParams.set("num", douyinId);
     let lastRetryableError: DouyinCheckError | undefined;
+    const attempts = Math.max(1, maxAttempts);
 
-    for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
       const timeoutSignal = AbortSignal.timeout(timeoutMs);
       const signal = callerSignal
         ? AbortSignal.any([callerSignal, timeoutSignal])
@@ -150,8 +155,11 @@ export function createDouyinChecker({
                 true
               );
 
-        if (!normalized.retryable || attempt === 1) throw normalized;
+        if (!normalized.retryable || attempt === attempts - 1) throw normalized;
         lastRetryableError = normalized;
+        if (retryDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+        }
       }
     }
 

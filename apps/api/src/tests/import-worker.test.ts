@@ -1,7 +1,13 @@
 import type { AccountInput } from "@douyin-admin/shared";
 import { describe, expect, it, vi } from "vitest";
 import type { AccountsService, AuditContext } from "../services/accounts";
-import { processImportRow } from "../services/import-worker";
+import {
+  classifyImportError,
+  processImportRow,
+  summarizeImportErrors
+} from "../services/import-worker";
+import { DouyinCheckError } from "../services/douyin-check";
+import { AppError } from "../middleware/errors";
 
 const input: AccountInput = {
   douyinId: "94946893573",
@@ -73,5 +79,49 @@ describe("processImportRow", () => {
       context
     );
     expect(accounts.create).not.toHaveBeenCalled();
+  });
+
+  it("classifies douyin and app errors for import failure reporting", () => {
+    expect(
+      classifyImportError(new DouyinCheckError("DOUYIN_TIMEOUT", true))
+    ).toEqual({
+      code: "DOUYIN_TIMEOUT",
+      message: "抖音检测超时"
+    });
+    expect(
+      classifyImportError(new AppError(409, "DOUYIN_ID_DUPLICATE", "抖音号已存在"))
+    ).toEqual({
+      code: "DOUYIN_ID_DUPLICATE",
+      message: "抖音号已存在"
+    });
+    expect(classifyImportError(new Error("boom"))).toEqual({
+      code: "IMPORT_ROW_FAILED",
+      message: "导入失败"
+    });
+  });
+
+  it("summarizes repeated import row errors", () => {
+    expect(
+      summarizeImportErrors([
+        {
+          row: 2,
+          douyinId: "1",
+          code: "DOUYIN_TIMEOUT",
+          message: "抖音检测超时"
+        },
+        {
+          row: 3,
+          douyinId: "2",
+          code: "DOUYIN_TIMEOUT",
+          message: "抖音检测超时"
+        },
+        {
+          row: 4,
+          douyinId: "3",
+          code: "DOUYIN_NETWORK_ERROR",
+          message: "抖音检测网络异常"
+        }
+      ])
+    ).toBe("失败 3 条：抖音检测超时×2、抖音检测网络异常×1");
   });
 });

@@ -22,6 +22,12 @@ type ImportJob = {
   updatedCount: number;
   skippedCount: number;
   failedCount: number;
+  failures?: Array<{
+    row: number;
+    douyinId: string;
+    code: string;
+    message: string;
+  }>;
   errorSummary?: string;
   createdAt: string;
 };
@@ -94,8 +100,24 @@ export function ImportsPage() {
     </div>}
     <div className="panel">
       <div className="panel-head"><div><h2>历史任务</h2><p>最近 100 次导入</p></div></div>
-      <div className="table-scroll"><table><thead><tr><th>文件名</th><th>状态</th><th>总数</th><th>新增</th><th>更新</th><th>跳过</th><th>失败</th><th>提交时间</th></tr></thead>
-      <tbody>{jobs.data?.length ? jobs.data.map((job) => <tr key={job._id}><td>{job.fileName}</td><td><span className={`tag job-${job.status}`}>{job.status==="completed"&&<CheckCircle2 size={13}/>} {jobLabels[job.status]}</span></td><td>{job.total}</td><td>{job.createdCount}</td><td>{job.updatedCount}</td><td>{job.skippedCount}</td><td title={job.errorSummary}>{job.failedCount}</td><td>{new Date(job.createdAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</td></tr>) : <tr><td className="empty" colSpan={8}>{jobs.isLoading ? "正在加载…" : "暂无导入任务"}</td></tr>}</tbody></table></div>
+      <div className="table-scroll"><table><thead><tr><th>文件名</th><th>状态</th><th>总数</th><th>新增</th><th>更新</th><th>跳过</th><th>失败</th><th>失败原因</th><th>提交时间</th></tr></thead>
+      <tbody>{jobs.data?.length ? jobs.data.map((job) => {
+        const failurePreview = (job.failures ?? []).slice(0, 5)
+          .map((item) => `第${item.row}行 ${item.douyinId}：${item.message}`)
+          .join("；");
+        const failureText = job.errorSummary || failurePreview || (job.failedCount ? "有失败，暂无明细" : "—");
+        return <tr key={job._id}>
+          <td>{job.fileName}</td>
+          <td><span className={`tag job-${job.status}`}>{job.status==="completed"&&<CheckCircle2 size={13}/>} {jobLabels[job.status]}</span></td>
+          <td>{job.total}</td>
+          <td>{job.createdCount}</td>
+          <td>{job.updatedCount}</td>
+          <td>{job.skippedCount}</td>
+          <td className={job.failedCount ? "danger-text" : undefined}>{job.failedCount}</td>
+          <td className="import-failure-cell" title={[job.errorSummary, failurePreview].filter(Boolean).join("\n") || undefined}>{failureText}</td>
+          <td>{new Date(job.createdAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</td>
+        </tr>;
+      }) : <tr><td className="empty" colSpan={9}>{jobs.isLoading ? "正在加载…" : "暂无导入任务"}</td></tr>}</tbody></table></div>
     </div>
   </section>;
 }

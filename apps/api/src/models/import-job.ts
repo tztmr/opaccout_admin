@@ -3,6 +3,13 @@ import { model, models, Schema, type HydratedDocument, type Model } from "mongoo
 export type ImportJobStatus = "queued" | "running" | "completed" | "failed";
 export type DuplicateStrategy = "skip" | "update";
 
+export type ImportRowFailure = {
+  row: number;
+  douyinId: string;
+  code: string;
+  message: string;
+};
+
 export type ImportJobRecord = {
   previewId: string;
   fileName: string;
@@ -14,6 +21,7 @@ export type ImportJobRecord = {
   updatedCount: number;
   skippedCount: number;
   failedCount: number;
+  failures?: ImportRowFailure[];
   startedAt?: Date;
   completedAt?: Date;
   errorSummary?: string;
@@ -40,6 +48,17 @@ const ImportJobSchema = new Schema<ImportJobRecord>(
     updatedCount: { type: Number, required: true, default: 0, min: 0 },
     skippedCount: { type: Number, required: true, default: 0, min: 0 },
     failedCount: { type: Number, required: true, default: 0, min: 0 },
+    failures: {
+      type: [
+        {
+          row: { type: Number, required: true, min: 1 },
+          douyinId: { type: String, required: true, maxlength: 32 },
+          code: { type: String, required: true, maxlength: 100 },
+          message: { type: String, required: true, maxlength: 500 }
+        }
+      ],
+      default: []
+    },
     startedAt: Date,
     completedAt: Date,
     errorSummary: { type: String, maxlength: 1000 }

@@ -1,12 +1,69 @@
 import type { AccountInput } from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
-import { ImportJobModel } from "../models/import-job";
+import { ImportJobModel, type ImportRowFailure } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
+import { AppError } from "../middleware/errors";
 import type { AccountsService, AuditContext } from "./accounts";
+import { DouyinCheckError } from "./douyin-check";
 import type { EncryptedValue, SecretCipher } from "./encryption";
 
 type StagedRow = Omit<AccountInput, "opSecret"> & { opSecret: EncryptedValue };
 export type ImportRowOutcome = "created" | "updated" | "skipped";
+
+const DOUYIN_ERROR_MESSAGES: Record<string, string> = {
+  DOUYIN_TIMEOUT: "抖音检测超时",
+  DOUYIN_NETWORK_ERROR: "抖音检测网络异常",
+  DOUYIN_UPSTREAM_UNAVAILABLE: "抖音检测服务不可用",
+  DOUYIN_UPSTREAM_REJECTED: "抖音检测被拒绝",
+  DOUYIN_RESPONSE_INVALID: "抖音检测响应无效",
+  DOUYIN_OUTER_STATUS_INVALID: "抖音检测外层状态异常",
+  DOUYIN_INNER_STATUS_INVALID: "抖音检测内层状态异常",
+  DOUYIN_STATUS_UNKNOWN: "抖音账号状态未知",
+  DOUYIN_ID_INVALID: "抖音号格式不正确",
+  DOUYIN_ID_DUPLICATE: "抖音号已存在",
+  SEC_UID_DUPLICATE: "sec_uid 已存在"
+};
+
+const MAX_STORED_FAILURES = 100;
+const IMPORT_ROW_GAP_MS = 250;
+
+export function classifyImportError(error: unknown): {
+  code: string;
+  message: string;
+} {
+  if (error instanceof DouyinCheckError) {
+    return {
+      code: error.code,
+      message: DOUYIN_ERROR_MESSAGES[error.code] ?? "抖音检测失败"
+    };
+  }
+  if (error instanceof AppError) {
+    return {
+      code: error.code,
+      message: DOUYIN_ERROR_MESSAGES[error.code] ?? error.message
+    };
+  }
+  return {
+    code: "IMPORT_ROW_FAILED",
+    message: "导入失败"
+  };
+}
+
+export function summarizeImportErrors(failures: ImportRowFailure[]): string {
+  if (!failures.length) return "";
+  const counts = new Map<string, number>();
+  for (const failure of failures) {
+    counts.set(failure.message, (counts.get(failure.message) ?? 0) + 1);
+  }
+  const parts = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], "zh-CN"))
+    .map(([message, count]) => `${message}×${count}`);
+  return `失败 ${failures.length} 条：${parts.join("、")}`.slice(0, 1000);
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export async function processImportRow(
   accounts: AccountsService,
@@ -48,7 +105,11 @@ export async function processNextImportJob(
   }
 
   const context = { ip: "system", userAgent: "import-worker", requestId: `import-${job.id}` };
-  for (const raw of preview.stagedRows as StagedRow[]) {
+  const failures: ImportRowFailure[] = [];
+  const stagedRows = preview.stagedRows as StagedRow[];
+  for (let index = 0; index < stagedRows.length; index += 1) {
+    const raw = stagedRows[index]!;
+    const rowNumber = index + 2;
     const input: AccountInput = { ...raw, opSecret: cipher.decrypt(raw.opSecret) };
     try {
       const outcome = await processImportRow(
@@ -60,13 +121,35 @@ export async function processNextImportJob(
       if (outcome === "created") job.createdCount += 1;
       if (outcome === "updated") job.updatedCount += 1;
       if (outcome === "skipped") job.skippedCount += 1;
-    } catch {
+    } catch (error) {
       job.failedCount += 1;
+      const classified = classifyImportError(error);
+      if (failures.length < MAX_STORED_FAILURES) {
+        failures.push({
+          row: rowNumber,
+          douyinId: input.douyinId,
+          code: classified.code,
+          message: classified.message
+        });
+      }
     }
     job.processed += 1;
-    if (job.processed % 25 === 0) await job.save();
+    if (job.processed % 25 === 0) {
+      job.failures = failures;
+      job.errorSummary = summarizeImportErrors(failures);
+      await job.save();
+    }
+    if (index < stagedRows.length - 1) {
+      await wait(IMPORT_ROW_GAP_MS);
+    }
   }
   job.status = "completed";
+  job.failures = failures;
+  if (failures.length) {
+    job.errorSummary = summarizeImportErrors(failures);
+  } else {
+    job.set("errorSummary", undefined);
+  }
   job.completedAt = new Date();
   await job.save();
   await ImportPreviewModel.findByIdAndDelete(preview._id);
