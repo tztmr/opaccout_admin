@@ -25,6 +25,9 @@ export function createAccountsRouter(service: AccountsService): Router {
   router.get("/", async (req, res, next) => {
     try { res.json(await service.list(req.query)); } catch (error) { next(error); }
   });
+  router.get("/owners", async (_req, res, next) => {
+    try { res.json(await service.owners()); } catch (error) { next(error); }
+  });
   router.post("/check-douyin", async (req, res, next) => {
     try { res.json(await service.check(String(req.body?.douyinId ?? ""))); } catch (error) { next(error); }
   });

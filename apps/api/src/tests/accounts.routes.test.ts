@@ -10,6 +10,7 @@ describe("account routes", () => {
     const accountService = {
       create,
       list: vi.fn(),
+      owners: vi.fn(),
       check: vi.fn(),
       get: vi.fn(),
       update: vi.fn(),
@@ -41,5 +42,38 @@ describe("account routes", () => {
 
     expect(response.status).toBe(201);
     expect(create).toHaveBeenCalledOnce();
+  });
+
+  it("returns owner options before treating owners as an account id", async () => {
+    const owners = vi.fn(async () => ({ items: ["小王", "张三"] }));
+    const get = vi.fn();
+    const accountService = {
+      create: vi.fn(),
+      list: vi.fn(),
+      owners,
+      check: vi.fn(),
+      get,
+      update: vi.fn(),
+      remove: vi.fn(),
+      batchRemove: vi.fn(),
+      reveal: vi.fn(),
+      batchUpdate: vi.fn(),
+      recheck: vi.fn(),
+      batchRecheck: vi.fn()
+    } as unknown as AccountsService;
+    const agent = new request.agent(
+      createApp({ config: testConfig, accountService })
+    );
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const response = await agent.get("/api/accounts/owners");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ items: ["小王", "张三"] });
+    expect(owners).toHaveBeenCalledOnce();
+    expect(get).not.toHaveBeenCalled();
   });
 });

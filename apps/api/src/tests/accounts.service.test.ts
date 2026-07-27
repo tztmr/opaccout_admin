@@ -257,4 +257,32 @@ describe("accounts service", () => {
       { $set: { owner: "张三" } }
     );
   });
+
+  it("returns unique non-empty owners in Chinese locale order", async () => {
+    const distinct = vi.fn(async () => ["张三", "", "小王", "张三", " 李四 "]);
+    const service = createAccountsService(dependencies({ distinct }));
+
+    await expect(service.owners()).resolves.toEqual({
+      items: ["李四", "小王", "张三"]
+    });
+    expect(distinct).toHaveBeenCalledWith("owner", { owner: { $ne: "" } });
+  });
+
+  it("adds an exact owner to list filters", async () => {
+    const lean = vi.fn(async () => []);
+    const limit = vi.fn(() => ({ lean }));
+    const skip = vi.fn(() => ({ limit }));
+    const sort = vi.fn(() => ({ skip }));
+    const find = vi.fn(() => ({ sort }));
+    const countDocuments = vi.fn(async () => 0);
+    const aggregate = vi.fn(async () => []);
+    const service = createAccountsService(
+      dependencies({ find, countDocuments, aggregate })
+    );
+
+    await service.list({ owner: "张三" });
+
+    expect(find).toHaveBeenCalledWith({ owner: "张三" });
+    expect(countDocuments).toHaveBeenCalledWith({ owner: "张三" });
+  });
 });

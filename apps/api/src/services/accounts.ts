@@ -164,6 +164,7 @@ export function createAccountsService({
       if (query.keyword) filter.searchText = new RegExp(escapeRegex(query.keyword.toLocaleLowerCase("zh-CN")), "i");
       if (query.saleStatus) filter.saleStatus = query.saleStatus;
       if (query.accountStatus) filter.accountStatus = query.accountStatus;
+      if (query.owner) filter.owner = query.owner;
       if (query.registeredFrom || query.registeredTo) {
         filter.registeredAt = {
           ...(query.registeredFrom ? { $gte: new Date(`${query.registeredFrom}T00:00:00.000Z`) } : {}),
@@ -192,6 +193,14 @@ export function createAccountsService({
           sold: statusMap.sold ?? 0,
           abnormal
         }
+      };
+    },
+
+    async owners(): Promise<{ items: string[] }> {
+      const values = await model.distinct("owner", { owner: { $ne: "" } });
+      return {
+        items: [...new Set(values.map((value) => value.trim()).filter(Boolean))]
+          .sort((left, right) => left.localeCompare(right, "zh-CN"))
       };
     },
 
