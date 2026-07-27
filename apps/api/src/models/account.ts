@@ -4,7 +4,7 @@ import {
   type AccountStatus,
   type SaleStatus
 } from "@douyin-admin/shared";
-import { model, models, Schema, type HydratedDocument } from "mongoose";
+import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
 import type { EncryptedValue } from "../services/encryption";
 
 export type AccountRecord = {
@@ -75,5 +75,6 @@ AccountSchema.pre("validate", function buildSearchText() {
     .trim();
 });
 
-export const AccountModel =
-  models.Account ?? model<AccountRecord>("Account", AccountSchema);
+export const AccountModel: Model<AccountRecord> =
+  (models.Account as Model<AccountRecord> | undefined) ??
+  model<AccountRecord>("Account", AccountSchema);

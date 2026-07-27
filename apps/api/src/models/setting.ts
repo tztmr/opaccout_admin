@@ -1,4 +1,4 @@
-import { model, models, Schema, type HydratedDocument } from "mongoose";
+import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
 
 export type SettingRecord = {
   key: "admin";
@@ -19,5 +19,6 @@ const SettingSchema = new Schema<SettingRecord>(
   { timestamps: true, versionKey: false }
 );
 
-export const SettingModel =
-  models.Setting ?? model<SettingRecord>("Setting", SettingSchema);
+export const SettingModel: Model<SettingRecord> =
+  (models.Setting as Model<SettingRecord> | undefined) ??
+  model<SettingRecord>("Setting", SettingSchema);

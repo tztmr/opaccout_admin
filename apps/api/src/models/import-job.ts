@@ -1,4 +1,4 @@
-import { model, models, Schema, type HydratedDocument } from "mongoose";
+import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
 
 export type ImportJobStatus = "queued" | "running" | "completed" | "failed";
 export type DuplicateStrategy = "skip" | "update";
@@ -49,5 +49,6 @@ const ImportJobSchema = new Schema<ImportJobRecord>(
 
 ImportJobSchema.index({ createdAt: -1 });
 
-export const ImportJobModel =
-  models.ImportJob ?? model<ImportJobRecord>("ImportJob", ImportJobSchema);
+export const ImportJobModel: Model<ImportJobRecord> =
+  (models.ImportJob as Model<ImportJobRecord> | undefined) ??
+  model<ImportJobRecord>("ImportJob", ImportJobSchema);

@@ -1,4 +1,4 @@
-import { model, models, Schema, type HydratedDocument } from "mongoose";
+import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
 
 export type ImportRowError = {
   row: number;
@@ -47,6 +47,6 @@ const ImportPreviewSchema = new Schema<ImportPreviewRecord>(
 
 ImportPreviewSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-export const ImportPreviewModel =
-  models.ImportPreview ??
+export const ImportPreviewModel: Model<ImportPreviewRecord> =
+  (models.ImportPreview as Model<ImportPreviewRecord> | undefined) ??
   model<ImportPreviewRecord>("ImportPreview", ImportPreviewSchema);

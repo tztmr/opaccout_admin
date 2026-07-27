@@ -1,4 +1,4 @@
-import { model, models, Schema, type HydratedDocument } from "mongoose";
+import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
 
 export type AuditLogRecord = {
   action: string;
@@ -31,5 +31,6 @@ const AuditLogSchema = new Schema<AuditLogRecord>(
 AuditLogSchema.index({ createdAt: -1 });
 AuditLogSchema.index({ action: 1, createdAt: -1 });
 
-export const AuditLogModel =
-  models.AuditLog ?? model<AuditLogRecord>("AuditLog", AuditLogSchema);
+export const AuditLogModel: Model<AuditLogRecord> =
+  (models.AuditLog as Model<AuditLogRecord> | undefined) ??
+  model<AuditLogRecord>("AuditLog", AuditLogSchema);
