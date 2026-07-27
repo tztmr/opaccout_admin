@@ -29,7 +29,7 @@ export const AccountInputSchema = z
     opName: z.string().trim().max(100).default(""),
     opSecret: z.string().min(1, "OP卡密不能为空").max(4096),
     owner: z.string().trim().min(1, "归属人不能为空").max(100),
-    saleStatus: SaleStatusSchema.default("unsold"),
+    saleStatus: SaleStatusSchema.default("recovered"),
     remark: z.string().trim().max(1000).default("")
   })
   .strict();
@@ -49,6 +49,7 @@ export const AccountListQuerySchema = z
     keyword: z.string().trim().max(200).optional(),
     saleStatus: SaleStatusSchema.optional(),
     accountStatus: AccountStatusSchema.optional(),
+    owner: z.string().trim().min(1).max(100).optional(),
     registeredFrom: z.iso.date().optional(),
     registeredTo: z.iso.date().optional(),
     includeStats: QueryBooleanSchema.default(true)
