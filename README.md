@@ -26,10 +26,11 @@ cp .env.example .env
 openssl rand -base64 32
 ```
 
-启动：
+启动。项目路径包含中文时使用传统构建器，可避开部分 Docker Desktop
+版本的 Buildx Bake 路径编码问题：
 
 ```bash
-docker compose up -d --build
+DOCKER_BUILDKIT=0 docker compose up -d --build
 ```
 
 默认访问 `http://localhost:8080`，使用 `.env` 中唯一的 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 登录。只有 Web 端口暴露给宿主机，API 和 MongoDB 不暴露宿主端口。
