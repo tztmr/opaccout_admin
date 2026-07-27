@@ -8,8 +8,9 @@ const OuterResponseSchema = z.object({
 
 const PunishmentSchema = z
   .object({
-    is_punish: z.boolean(),
-    ban_type: z.number().int()
+    is_punish: z.boolean().optional(),
+    ban_type: z.number().int().optional(),
+    punish_title: z.string().optional()
   })
   .passthrough();
 
@@ -17,7 +18,7 @@ const InnerResponseSchema = z.object({
   status_code: z.number().int(),
   user_info: z.object({
     sec_uid: z.string().min(1),
-    is_ban: z.boolean(),
+    is_ban: z.boolean().optional(),
     punish_remind_info: PunishmentSchema.nullish()
   })
 });
@@ -41,13 +42,41 @@ export class DouyinCheckError extends Error {
 }
 
 function mapAccountStatus(
-  isBan: boolean,
+  isBan: boolean | undefined,
   punishment: z.infer<typeof PunishmentSchema> | null | undefined
 ): AccountStatus {
+  const title = punishment?.punish_title?.trim() ?? "";
+  if (title === "账号已被封禁") return "banned";
   if (punishment?.is_punish && punishment.ban_type === 1) return "banned";
   if (punishment?.is_punish && punishment.ban_type === 2) return "violation";
-  if (!punishment?.is_punish && !isBan) return "normal";
-  throw new DouyinCheckError("DOUYIN_STATUS_UNKNOWN");
+  if (title) return "violation";
+  if (punishment?.is_punish) return "violation";
+  if (isBan === true) return "violation";
+  return "normal";
+}
+
+function parseJsonish(text: string): unknown {
+  const normalized = text
+    .trim()
+    .replace(/^\uFEFF/, "")
+    .replace(/^for\s*\(\s*;;\s*\);\s*/, "");
+  if (!normalized) return null;
+
+  const candidates = [normalized];
+  const start = normalized.indexOf("{");
+  const end = normalized.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    candidates.push(normalized.slice(start, end + 1));
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
 }
 
 export function parseDouyinResponse(
@@ -59,13 +88,23 @@ export function parseDouyinResponse(
 
   try {
     outer = OuterResponseSchema.parse(value);
-    innerValue = JSON.parse(outer.body);
-  } catch {
+    if (!outer.body.trim()) {
+      throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID", true);
+    }
+    innerValue = parseJsonish(outer.body);
+    if (innerValue == null) {
+      throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID", true);
+    }
+  } catch (error) {
+    if (error instanceof DouyinCheckError) throw error;
     throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID");
   }
 
   if (outer.status !== 200) {
-    throw new DouyinCheckError("DOUYIN_OUTER_STATUS_INVALID");
+    throw new DouyinCheckError(
+      "DOUYIN_OUTER_STATUS_INVALID",
+      outer.status >= 500
+    );
   }
 
   let inner: z.infer<typeof InnerResponseSchema>;
@@ -106,12 +145,14 @@ export function createDouyinChecker({
   maxAttempts = 3,
   retryDelayMs = 400
 }: DouyinCheckerOptions) {
-  return async function checkDouyinId(
-    douyinId: string,
+  async function requestCheck(
+    params: { num?: string; secUid?: string },
     callerSignal?: AbortSignal
   ): Promise<DouyinCheckResult> {
     const requestUrl = new URL(baseUrl);
-    requestUrl.searchParams.set("num", douyinId);
+    if (params.num) requestUrl.searchParams.set("num", params.num);
+    if (params.secUid) requestUrl.searchParams.set("sec_uid", params.secUid);
+
     let lastRetryableError: DouyinCheckError | undefined;
     const attempts = Math.max(1, maxAttempts);
 
@@ -139,7 +180,7 @@ export function createDouyinChecker({
         try {
           responseValue = await response.json();
         } catch {
-          throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID");
+          throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID", true);
         }
 
         return parseDouyinResponse(responseValue, now);
@@ -158,11 +199,39 @@ export function createDouyinChecker({
         if (!normalized.retryable || attempt === attempts - 1) throw normalized;
         lastRetryableError = normalized;
         if (retryDelayMs > 0) {
-          await new Promise((resolve) => setTimeout(resolve, retryDelayMs * (attempt + 1)));
+          await new Promise((resolve) =>
+            setTimeout(resolve, retryDelayMs * (attempt + 1))
+          );
         }
       }
     }
 
-    throw lastRetryableError ?? new DouyinCheckError("DOUYIN_NETWORK_ERROR", true);
+    throw (
+      lastRetryableError ?? new DouyinCheckError("DOUYIN_NETWORK_ERROR", true)
+    );
+  }
+
+  return async function checkDouyinId(
+    douyinId: string,
+    callerSignal?: AbortSignal
+  ): Promise<DouyinCheckResult> {
+    // Follow check_tktok_num: resolve unique_id -> sec_uid first, then recheck by sec_uid.
+    const first = await requestCheck({ num: douyinId }, callerSignal);
+    if (!first.secUid) return first;
+
+    try {
+      const rechecked = await requestCheck(
+        { secUid: first.secUid },
+        callerSignal
+      );
+      return {
+        ...rechecked,
+        secUid: rechecked.secUid || first.secUid,
+        checkedAt: now()
+      };
+    } catch {
+      // Keep the first successful num-based result when sec_uid recheck fails.
+      return first;
+    }
   };
 }
