@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { createApp } from "../app";
 import type { AccountsService } from "../services/accounts";
+import { createTestAdminAuth } from "./admin-test-helper";
 import { testConfig } from "./test-config";
 
 describe("account routes", () => {
@@ -21,7 +22,11 @@ describe("account routes", () => {
       recheck: vi.fn(),
       batchRecheck: vi.fn()
     } as unknown as AccountsService;
-    const app = createApp({ config: testConfig, accountService });
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const app = createApp({ config: testConfig, adminAuth, accountService });
 
     expect((await request(app).post("/api/accounts").send({})).status).toBe(401);
 
@@ -61,8 +66,12 @@ describe("account routes", () => {
       recheck: vi.fn(),
       batchRecheck: vi.fn()
     } as unknown as AccountsService;
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
     const agent = new request.agent(
-      createApp({ config: testConfig, accountService })
+      createApp({ config: testConfig, adminAuth, accountService })
     );
     await agent.post("/api/auth/login").send({
       username: "admin",

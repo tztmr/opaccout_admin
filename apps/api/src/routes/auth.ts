@@ -1,35 +1,23 @@
-import { timingSafeEqual } from "node:crypto";
-import { Router } from "express";
+import type { Request, Router } from "express";
+import { Router as createRouter } from "express";
 import { ipKeyGenerator, rateLimit } from "express-rate-limit";
 import { z } from "zod";
 import type { AppConfig } from "../config";
 import { AppError } from "../middleware/errors";
+import {
+  AdminAlreadyExistsError,
+  type AdminAuthService
+} from "../services/admin-auth";
 
-const LoginSchema = z
+const CredentialsSchema = z
   .object({
     username: z.string().trim().min(1).max(100),
-    password: z.string().min(1).max(4096)
+    password: z.string().min(12).max(4096)
   })
   .strict();
 
-function constantTimeEqual(actual: string, expected: string): boolean {
-  const actualBuffer = Buffer.from(actual);
-  const expectedBuffer = Buffer.from(expected);
-  const paddedLength = Math.max(actualBuffer.length, expectedBuffer.length, 1);
-  const actualPadded = Buffer.alloc(paddedLength);
-  const expectedPadded = Buffer.alloc(paddedLength);
-  actualBuffer.copy(actualPadded);
-  expectedBuffer.copy(expectedPadded);
-
-  return (
-    timingSafeEqual(actualPadded, expectedPadded) &&
-    actualBuffer.length === expectedBuffer.length
-  );
-}
-
-export function createAuthRouter(config: AppConfig): Router {
-  const router = Router();
-  const limiter = rateLimit({
+function createCredentialLimiter() {
+  return rateLimit({
     windowMs: 15 * 60 * 1000,
     limit: 10,
     standardHeaders: "draft-8",
@@ -45,21 +33,67 @@ export function createAuthRouter(config: AppConfig): Router {
       return `${ipKeyGenerator(req.ip ?? "unknown")}:${username}`;
     }
   });
+}
 
-  router.post("/login", limiter, async (req, res, next) => {
+async function establishAdminSession(
+  req: Request,
+  username: string
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    req.session.regenerate((error) => (error ? reject(error) : resolve()));
+  });
+  req.session.admin = {
+    username,
+    authenticatedAt: new Date().toISOString()
+  };
+  await new Promise<void>((resolve, reject) => {
+    req.session.save((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+export function createAuthRouter(
+  _config: AppConfig,
+  adminAuth: AdminAuthService
+): Router {
+  const router = createRouter();
+  const setupLimiter = createCredentialLimiter();
+  const loginLimiter = createCredentialLimiter();
+
+  router.get("/setup", async (_req, res, next) => {
     try {
-      const credentials = LoginSchema.parse(req.body);
-      const validUsername = constantTimeEqual(
-        credentials.username,
-        config.adminUsername
-      );
-      const validPassword = constantTimeEqual(
-        credentials.password,
-        config.adminPassword
-      );
-      const valid = validUsername && validPassword;
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ needsSetup: await adminAuth.needsSetup() });
+    } catch (error) {
+      next(error);
+    }
+  });
 
-      if (!valid) {
+  router.post("/setup", setupLimiter, async (req, res, next) => {
+    try {
+      const credentials = CredentialsSchema.parse(req.body);
+      const admin = await adminAuth.setup(credentials);
+      await establishAdminSession(req, admin.username);
+      res.status(201).json({ authenticated: true, username: admin.username });
+    } catch (error) {
+      if (error instanceof AdminAlreadyExistsError) {
+        next(
+          new AppError(409, "ADMIN_ALREADY_EXISTS", "管理员已存在，请直接登录")
+        );
+        return;
+      }
+      next(error);
+    }
+  });
+
+  router.post("/login", loginLimiter, async (req, res, next) => {
+    try {
+      const credentials = CredentialsSchema.parse(req.body);
+      if (await adminAuth.needsSetup()) {
+        throw new AppError(409, "SETUP_REQUIRED", "请先注册管理员");
+      }
+
+      const admin = await adminAuth.authenticate(credentials);
+      if (!admin) {
         throw new AppError(
           401,
           "AUTH_INVALID_CREDENTIALS",
@@ -67,18 +101,8 @@ export function createAuthRouter(config: AppConfig): Router {
         );
       }
 
-      await new Promise<void>((resolve, reject) => {
-        req.session.regenerate((error) => (error ? reject(error) : resolve()));
-      });
-      req.session.admin = {
-        username: config.adminUsername,
-        authenticatedAt: new Date().toISOString()
-      };
-      await new Promise<void>((resolve, reject) => {
-        req.session.save((error) => (error ? reject(error) : resolve()));
-      });
-
-      res.json({ authenticated: true, username: config.adminUsername });
+      await establishAdminSession(req, admin.username);
+      res.json({ authenticated: true, username: admin.username });
     } catch (error) {
       next(error);
     }

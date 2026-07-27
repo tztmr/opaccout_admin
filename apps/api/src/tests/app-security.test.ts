@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { createApp } from "../app";
+import { createTestAdminAuth } from "./admin-test-helper";
 import { testConfig } from "./test-config";
 
 describe("application security", () => {
   it("protects management APIs", async () => {
-    const response = await request(createApp({ config: testConfig })).get(
+    const adminAuth = await createTestAdminAuth();
+    const response = await request(createApp({ config: testConfig, adminAuth })).get(
       "/api/test/protected"
     );
 
@@ -15,7 +17,8 @@ describe("application security", () => {
   });
 
   it("sets defensive response headers", async () => {
-    const response = await request(createApp({ config: testConfig })).get(
+    const adminAuth = await createTestAdminAuth();
+    const response = await request(createApp({ config: testConfig, adminAuth })).get(
       "/api/auth/session"
     );
 
@@ -24,7 +27,8 @@ describe("application security", () => {
   });
 
   it("returns a normalized error for an oversized JSON body", async () => {
-    const response = await request(createApp({ config: testConfig }))
+    const adminAuth = await createTestAdminAuth();
+    const response = await request(createApp({ config: testConfig, adminAuth }))
       .post("/api/auth/login")
       .send({ username: "admin", password: "x".repeat(1_100_000) });
 

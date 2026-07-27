@@ -5,8 +5,6 @@ import { loadConfig } from "../config";
 const validEnv = {
   NODE_ENV: "test",
   PORT: "3000",
-  ADMIN_USERNAME: "admin",
-  ADMIN_PASSWORD: "a-long-admin-password",
   SESSION_SECRET: "a-session-secret-with-more-than-32-characters",
   SESSION_HOURS: "12",
   FIELD_ENCRYPTION_KEY: randomBytes(32).toString("base64"),
@@ -26,6 +24,17 @@ describe("loadConfig", () => {
     );
     expect(config.qqOpAppId).toBe("1105602870");
     expect(config.qqOpProfileTimeoutMs).toBe(5000);
+  });
+
+  it("does not load obsolete administrator credentials", () => {
+    const config = loadConfig({
+      ...validEnv,
+      ADMIN_USERNAME: "ignored",
+      ADMIN_PASSWORD: "ignored-long-password"
+    });
+
+    expect(config).not.toHaveProperty("adminUsername");
+    expect(config).not.toHaveProperty("adminPassword");
   });
 
   it("requires an HTTPS Douyin API URL", () => {

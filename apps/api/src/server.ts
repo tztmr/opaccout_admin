@@ -6,6 +6,8 @@ import { loadConfig } from "./config";
 import { ImportJobModel } from "./models/import-job";
 import { auditService } from "./services/audit";
 import { createAccountsService } from "./services/accounts";
+import { createAdminAuthService } from "./services/admin-auth";
+import { createMongooseAdminRepository } from "./services/admin-repository";
 import { createDouyinChecker } from "./services/douyin-check";
 import { createSecretCipher } from "./services/encryption";
 import { startImportWorker } from "./services/import-worker";
@@ -33,6 +35,7 @@ async function main() {
     cipher,
     audit: auditService
   });
+  const adminAuth = createAdminAuthService(createMongooseAdminRepository());
   const sessionStore = MongoStore.create({
     mongoUrl: config.mongoUri,
     collectionName: "sessions",
@@ -40,6 +43,7 @@ async function main() {
   });
   const app = createApp({
     config,
+    adminAuth,
     sessionStore,
     accountService: accounts,
     cipher,

@@ -8,6 +8,7 @@ import { requestIdMiddleware } from "./middleware/request-id";
 import { createAuthRouter } from "./routes/auth";
 import { createAccountsRouter } from "./routes/accounts";
 import type { AccountsService } from "./services/accounts";
+import type { AdminAuthService } from "./services/admin-auth";
 import { createHealthRouter } from "./routes/health";
 import { createAuditLogsRouter } from "./routes/audit-logs";
 import { createSettingsRouter } from "./routes/settings";
@@ -17,6 +18,7 @@ import type { SecretCipher } from "./services/encryption";
 
 type CreateAppOptions = {
   config: AppConfig;
+  adminAuth: AdminAuthService;
   sessionStore?: Store;
   accountService?: AccountsService;
   cipher?: SecretCipher;
@@ -25,7 +27,13 @@ type CreateAppOptions = {
 };
 
 export function createApp({
-  config, sessionStore, accountService, cipher, audit, isReady = () => true
+  config,
+  adminAuth,
+  sessionStore,
+  accountService,
+  cipher,
+  audit,
+  isReady = () => true
 }: CreateAppOptions): Express {
   const app = express();
   app.set("trust proxy", 1);
@@ -53,7 +61,7 @@ export function createApp({
   );
 
   app.use("/api/health", createHealthRouter(isReady));
-  app.use("/api/auth", createAuthRouter(config));
+  app.use("/api/auth", createAuthRouter(config, adminAuth));
   if (accountService) {
     app.use("/api/accounts", requireAdmin, createAccountsRouter(accountService));
   }
