@@ -215,23 +215,33 @@ export function createDouyinChecker({
     douyinId: string,
     callerSignal?: AbortSignal
   ): Promise<DouyinCheckResult> {
-    // Follow check_tktok_num: resolve unique_id -> sec_uid first, then recheck by sec_uid.
-    const first = await requestCheck({ num: douyinId }, callerSignal);
-    if (!first.secUid) return first;
-
+    // Primary path: check by Douyin unique_id (num) only.
     try {
-      const rechecked = await requestCheck(
-        { secUid: first.secUid },
-        callerSignal
-      );
-      return {
-        ...rechecked,
-        secUid: rechecked.secUid || first.secUid,
-        checkedAt: now()
-      };
-    } catch {
-      // Keep the first successful num-based result when sec_uid recheck fails.
-      return first;
+      return await requestCheck({ num: douyinId }, callerSignal);
+    } catch (primaryError) {
+      // Fallback (check_tktok_num style): recover sec_uid via num, then recheck by sec_uid.
+      let resolved: DouyinCheckResult;
+      try {
+        resolved = await requestCheck({ num: douyinId }, callerSignal);
+      } catch {
+        throw primaryError;
+      }
+
+      if (!resolved.secUid) return resolved;
+
+      try {
+        const rechecked = await requestCheck(
+          { secUid: resolved.secUid },
+          callerSignal
+        );
+        return {
+          ...rechecked,
+          secUid: rechecked.secUid || resolved.secUid,
+          checkedAt: now()
+        };
+      } catch {
+        return resolved;
+      }
     }
   };
 }

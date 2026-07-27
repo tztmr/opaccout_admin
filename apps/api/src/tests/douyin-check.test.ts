@@ -4,7 +4,6 @@ import normalFixture from "./fixtures/douyin-normal.json";
 import violationFixture from "./fixtures/douyin-violation.json";
 import {
   createDouyinChecker,
-  DouyinCheckError,
   parseDouyinResponse
 } from "../services/douyin-check";
 
@@ -23,7 +22,7 @@ describe("parseDouyinResponse", () => {
     );
   });
 
-  it("rejects unknown punishment instead of guessing", () => {
+  it("maps unknown punish_title to violation instead of failing", () => {
     const fixture = {
       status: 200,
       body: JSON.stringify({
@@ -36,7 +35,6 @@ describe("parseDouyinResponse", () => {
       })
     };
 
-    // ban_type 缺失时，按 punish_title 判定；未知标题视为违规而不是直接失败。
     expect(parseDouyinResponse(fixture).accountStatus).toBe("violation");
   });
 
@@ -77,7 +75,7 @@ describe("parseDouyinResponse", () => {
 });
 
 describe("createDouyinChecker", () => {
-  it("URL-encodes the Douyin ID and returns parsed data", async () => {
+  it("uses primary num check only when it succeeds", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(JSON.stringify(normalFixture), {
         status: 200,
@@ -92,16 +90,16 @@ describe("createDouyinChecker", () => {
 
     const result = await checkDouyinId("94 946");
 
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("num=94+946");
-    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain(
-      "sec_uid=MS4wLjABAAAA-normal-fixture"
-    );
+    expect(String(fetchImpl.mock.calls[0]?.[0])).not.toContain("sec_uid=");
     expect(result.checkedAt.toISOString()).toBe("2026-07-27T00:00:00.000Z");
+    expect(result.accountStatus).toBe("normal");
   });
 
-  it("resolves sec_uid first and rechecks status with sec_uid", async () => {
-    const first = {
+  it("falls back to sec_uid recheck only after primary num check fails", async () => {
+    const emptyBody = { status: 200, body: "" };
+    const withSecUid = {
       status: 200,
       body: JSON.stringify({
         status_code: 0,
@@ -111,7 +109,7 @@ describe("createDouyinChecker", () => {
         }
       })
     };
-    const second = {
+    const rechecked = {
       status: 200,
       body: JSON.stringify({
         status_code: 0,
@@ -126,37 +124,66 @@ describe("createDouyinChecker", () => {
         }
       })
     };
+
     const fetchImpl = vi
       .fn<typeof fetch>()
+      // primary path retries and fails with empty body
       .mockResolvedValueOnce(
-        new Response(JSON.stringify(first), {
+        new Response(JSON.stringify(emptyBody), {
           status: 200,
           headers: { "content-type": "application/json" }
         })
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify(second), {
+        new Response(JSON.stringify(emptyBody), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(emptyBody), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      // fallback: recover sec_uid via num
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(withSecUid), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      // fallback: recheck by sec_uid
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(rechecked), {
           status: 200,
           headers: { "content-type": "application/json" }
         })
       );
+
     const checkDouyinId = createDouyinChecker({
       baseUrl: new URL("https://unid.tztright.top/check"),
-      fetchImpl
+      fetchImpl,
+      maxAttempts: 3,
+      retryDelayMs: 0
     });
 
     await expect(checkDouyinId("94946893573")).resolves.toMatchObject({
       secUid: "MS4wLjABAAAA-from-num",
       accountStatus: "banned"
     });
+
     expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("num=94946893573");
-    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain(
-      "sec_uid=MS4wLjABAAAA-from-num"
-    );
+    expect(
+      fetchImpl.mock.calls.some((call) =>
+        String(call[0]).includes("sec_uid=MS4wLjABAAAA-from-num")
+      )
+    ).toBe(true);
   });
 
-  it("keeps first result when sec_uid recheck fails", async () => {
-    const first = {
+  it("keeps recovered num result when sec_uid recheck fails in fallback", async () => {
+    const emptyBody = { status: 200, body: "" };
+    const withSecUid = {
       status: 200,
       body: JSON.stringify({
         status_code: 0,
@@ -166,19 +193,31 @@ describe("createDouyinChecker", () => {
         }
       })
     };
+
     const fetchImpl = vi
       .fn<typeof fetch>()
+      // primary fails
       .mockResolvedValueOnce(
-        new Response(JSON.stringify(first), {
+        new Response(JSON.stringify(emptyBody), {
           status: 200,
           headers: { "content-type": "application/json" }
         })
       )
+      // fallback recovers sec_uid via num
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(withSecUid), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      )
+      // sec_uid recheck fails
       .mockResolvedValueOnce(new Response("upstream error", { status: 503 }));
+
     const checkDouyinId = createDouyinChecker({
       baseUrl: new URL("https://unid.tztright.top/check"),
       fetchImpl,
-      maxAttempts: 1
+      maxAttempts: 1,
+      retryDelayMs: 0
     });
 
     await expect(checkDouyinId("94946893573")).resolves.toMatchObject({
@@ -187,7 +226,7 @@ describe("createDouyinChecker", () => {
     });
   });
 
-  it("retries one HTTP 5xx response", async () => {
+  it("retries one HTTP 5xx response on primary path", async () => {
     const fetchImpl = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(new Response("upstream error", { status: 503 }))
@@ -199,17 +238,20 @@ describe("createDouyinChecker", () => {
       );
     const checkDouyinId = createDouyinChecker({
       baseUrl: new URL("https://unid.tztright.top/check"),
-      fetchImpl
+      fetchImpl,
+      retryDelayMs: 0
     });
 
     await expect(checkDouyinId("94946893573")).resolves.toMatchObject({
       accountStatus: "normal"
     });
-    // first attempt: num probe fails, then retries; after success no sec_uid recheck needed for fixture
-    expect(fetchImpl).toHaveBeenCalled();
+    // primary succeeds after retry, so no sec_uid fallback
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("num=");
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain("num=");
   });
 
-  it("does not retry an unknown payload", async () => {
+  it("maps non-standard punishment title to violation", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () =>
       new Response(
         JSON.stringify({
@@ -219,7 +261,11 @@ describe("createDouyinChecker", () => {
             user_info: {
               sec_uid: "MS4wLjABAAAA-unknown",
               is_ban: true,
-              punish_remind_info: { is_punish: true, ban_type: 99, punish_title: "其他处罚" }
+              punish_remind_info: {
+                is_punish: true,
+                ban_type: 99,
+                punish_title: "其他处罚"
+              }
             }
           })
         }),
@@ -234,5 +280,6 @@ describe("createDouyinChecker", () => {
     await expect(checkDouyinId("94946893573")).resolves.toMatchObject({
       accountStatus: "violation"
     });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });
