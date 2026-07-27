@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export const SALE_STATUSES = ["unsold", "sold", "disabled", "recovered"] as const;
+export const SALE_STATUSES = [
+  "unknown",
+  "unsold",
+  "sold",
+  "disabled",
+  "recovered"
+] as const;
 export const ACCOUNT_STATUSES = ["normal", "violation", "banned"] as const;
 
 export const SaleStatusSchema = z.enum(SALE_STATUSES);
@@ -10,6 +16,7 @@ export type SaleStatus = z.infer<typeof SaleStatusSchema>;
 export type AccountStatus = z.infer<typeof AccountStatusSchema>;
 
 export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
+  unknown: "未知",
   unsold: "未售卖",
   sold: "已售卖",
   disabled: "已停用",
@@ -29,7 +36,7 @@ export const AccountInputSchema = z
     opName: z.string().trim().max(100).default(""),
     opSecret: z.string().min(1, "OP卡密不能为空").max(4096),
     owner: z.string().trim().min(1, "归属人不能为空").max(100),
-    saleStatus: SaleStatusSchema.default("recovered"),
+    saleStatus: SaleStatusSchema.default("unknown"),
     remark: z.string().trim().max(1000).default("")
   })
   .strict();

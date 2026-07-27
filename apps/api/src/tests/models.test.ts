@@ -12,11 +12,11 @@ describe("Account model", () => {
     expect(secUidIndex?.[1].unique).toBe(true);
   });
 
-  it("validates status enums and encrypted OP shape", async () => {
-    const invalid = new AccountModel({
+  it("accepts unknown and rejects values outside the shared status enums", async () => {
+    const account = new AccountModel({
       douyinId: "94946893573",
       secUid: "MS4wLjABAAAA-fixture",
-      registeredAt: new Date("2026-07-27T00:00:00.000Z"),
+      registeredAt: new Date("2026-07-28T00:00:00.000Z"),
       opName: "",
       opSecret: {
         version: 1,
@@ -32,7 +32,9 @@ describe("Account model", () => {
       remark: ""
     });
 
-    await expect(invalid.validate()).rejects.toThrow();
+    await expect(account.validate()).resolves.toBeUndefined();
+    account.saleStatus = "invalid" as never;
+    await expect(account.validate()).rejects.toThrow();
   });
 
   it("builds normalized search text before validation", async () => {
