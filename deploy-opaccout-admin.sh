@@ -214,10 +214,28 @@ install_docker_if_needed() {
 
   info "检测到未安装 Docker Compose，开始自动安装 Docker"
   
-  if ask_yes_no "是否使用阿里云 Docker 镜像源加速安装（海外机选 n）" "n"; then
-    curl -fsSL https://get.docker.com | run_root env CHANNEL=stable sh -s docker --mirror Aliyun
+  if command_exists apt-get; then
+    info "检测到 Ubuntu/Debian 系统，使用官方源快速安装 Docker"
+    run_root install -m 0755 -d /etc/apt/keyrings
+    run_root curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    run_root chmod a+r /etc/apt/keyrings/docker.asc
+    
+    # 动态获取系统版本代号并添加源
+    local codename
+    codename="$(lsb_release -cs)"
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $codename stable" | run_root tee /etc/apt/sources.list.d/docker.list > /dev/null
+    
+    info "更新源并安装 Docker"
+    apt_update_fast
+    apt_install_fast docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   else
-    curl -fsSL https://get.docker.com | run_root sh
+    # 针对非 Debian 系统，或者降级走一键脚本
+    if ask_yes_no "非 Debian 系统，是否使用阿里云 Docker 镜像源加速一键安装（海外机选 n）" "n"; then
+      curl -fsSL https://get.docker.com | run_root env CHANNEL=stable sh -s docker --mirror Aliyun
+    else
+      info "执行 Docker 官方一键安装脚本..."
+      curl -fsSL https://get.docker.com | run_root sh
+    fi
   fi
 
   if command_exists systemctl; then
