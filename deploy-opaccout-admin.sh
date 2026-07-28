@@ -43,7 +43,10 @@ apt_update_fast() {
     -o Acquire::Languages=none \
     -o Acquire::Retries=3 \
     -o Acquire::ForceIPv4=true \
-    -o Acquire::http::Timeout="10"
+    -o Acquire::http::Timeout="10" \
+    -o Acquire::https::Timeout="10" \
+    -o Acquire::http::No-Cache=true \
+    -o Acquire::http::Pipeline-Depth=0
 }
 
 apt_install_fast() {
