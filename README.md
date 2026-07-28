@@ -111,6 +111,11 @@ COOKIE_SECURE=false
 COOKIE_SECURE=true
 ```
 
+如果你的服务器前面还有一层面板 Nginx、宝塔、1Panel、Caddy 或 CDN，
+要确保最外层判定出的 `X-Forwarded-Proto: https` 能继续透传到应用容器，
+不要在中间层被重新改写成 `http`，否则登录成功后仍会因为安全 Cookie
+没有正确建立而出现 `/api/imports/preview` 这类接口返回 `401`。
+
 ## 导入格式
 
 导入支持 `.xlsx`、`.xls` 和 `.csv`，文件最大 10 MB。可在“导入记录”页面下载模板。模板字段：

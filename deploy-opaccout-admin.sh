@@ -899,6 +899,10 @@ server {
     server_name ${domain};
 
     client_max_body_size 20m;
+    set \$forwarded_proto \$scheme;
+    if (\$http_x_forwarded_proto != "") {
+        set \$forwarded_proto \$http_x_forwarded_proto;
+    }
 
     location / {
         proxy_pass http://127.0.0.1:${web_port};
@@ -906,7 +910,7 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 600s;
