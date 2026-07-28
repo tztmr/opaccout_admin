@@ -41,7 +41,9 @@ command_exists() { command -v "$1" >/dev/null 2>&1; }
 apt_update_fast() {
   run_root env DEBIAN_FRONTEND=noninteractive apt-get update \
     -o Acquire::Languages=none \
-    -o Acquire::Retries=3
+    -o Acquire::Retries=3 \
+    -o Acquire::ForceIPv4=true \
+    -o Acquire::http::Timeout="10"
 }
 
 apt_install_fast() {
