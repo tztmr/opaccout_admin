@@ -22,6 +22,10 @@ DEFAULT_BRANCH="main"
 DEFAULT_INSTALL_DIR="/opt/opaccout_admin"
 STATE_DIR="${HOME}/.${APP_SLUG}-deploy"
 STATE_FILE="${STATE_DIR}/state.env"
+APT_CACHE_DIR="/var/cache/${APP_SLUG}"
+APT_UPDATE_STAMP="${APT_CACHE_DIR}/apt-updated-at"
+APT_SOURCES_BACKUP_DIR="${APT_CACHE_DIR}/apt-sources"
+APT_UPDATE_CACHE_SECONDS=1800
 
 PROJECT_DIR=""
 REPO_URL=""
@@ -38,15 +42,105 @@ trim() {
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+apt_primary_mirror() {
+  local arch=""
+  if command_exists dpkg; then
+    arch="$(dpkg --print-architecture 2>/dev/null || true)"
+  fi
+
+  case "$arch" in
+    amd64|i386)
+      printf '%s' "http://archive.ubuntu.com/ubuntu"
+      ;;
+    *)
+      printf '%s' "http://ports.ubuntu.com/ubuntu-ports"
+      ;;
+  esac
+}
+
+apt_sources_files() {
+  local path=""
+  for path in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do
+    [[ -e "$path" ]] || continue
+    printf '%s\n' "$path"
+  done
+}
+
+apt_update_recently() {
+  [[ -f "$APT_UPDATE_STAMP" ]] || return 1
+
+  local now="" last=""
+  now="$(date +%s)"
+  last="$(cat "$APT_UPDATE_STAMP" 2>/dev/null || echo 0)"
+  [[ "$last" =~ ^[0-9]+$ ]] || return 1
+
+  (( now - last < APT_UPDATE_CACHE_SECONDS ))
+}
+
+mark_apt_updated() {
+  run_root install -d -m 0755 "$APT_CACHE_DIR"
+  printf '%s\n' "$(date +%s)" | run_root tee "$APT_UPDATE_STAMP" >/dev/null
+}
+
+backup_apt_sources() {
+  run_root install -d -m 0755 "$APT_SOURCES_BACKUP_DIR"
+
+  local path="" backup_name=""
+  while IFS= read -r path; do
+    backup_name="$(printf '%s' "$path" | sed 's#^/##; s#/#__#g').bak"
+    run_root cp "$path" "${APT_SOURCES_BACKUP_DIR}/${backup_name}"
+  done < <(apt_sources_files)
+}
+
+switch_ubuntu_sources_to_official() {
+  local mirror=""
+  mirror="$(apt_primary_mirror)"
+  info "切换 Ubuntu 软件源到 ${mirror}"
+  backup_apt_sources
+
+  local path=""
+  while IFS= read -r path; do
+    run_root sed -i'.opaccoutbak' \
+      -e "s#https\\?://anycast-mirrors\\.as25820\\.net/ubuntu#${mirror}#g" \
+      -e "s#https\\?://security\\.ubuntu\\.com/ubuntu#${mirror}#g" \
+      -e "s#https\\?://[A-Za-z0-9.-]*archive\\.ubuntu\\.com/ubuntu#${mirror}#g" \
+      -e "s#https\\?://ports\\.ubuntu\\.com/ubuntu-ports#${mirror}#g" \
+      "$path"
+    run_root rm -f "${path}.opaccoutbak"
+  done < <(apt_sources_files)
+}
+
 apt_update_fast() {
-  run_root env DEBIAN_FRONTEND=noninteractive apt-get update \
-    -o Acquire::Languages=none \
-    -o Acquire::Retries=3 \
-    -o Acquire::ForceIPv4=true \
-    -o Acquire::http::Timeout="10" \
-    -o Acquire::https::Timeout="10" \
-    -o Acquire::http::No-Cache=true \
-    -o Acquire::http::Pipeline-Depth=0
+  local force_update="${1:-}"
+
+  if [[ "$force_update" != "force" ]] && apt_update_recently; then
+    info "APT 索引在最近 ${APT_UPDATE_CACHE_SECONDS} 秒内已更新，跳过重复更新"
+    return 0
+  fi
+
+  local retried_with_official_mirror=0
+  while true; do
+    if run_root env DEBIAN_FRONTEND=noninteractive apt-get update \
+      -o Acquire::Languages=none \
+      -o Acquire::Retries=3 \
+      -o Acquire::ForceIPv4=true \
+      -o Acquire::http::Timeout="10" \
+      -o Acquire::https::Timeout="10" \
+      -o Acquire::http::No-Cache=true \
+      -o Acquire::http::Pipeline-Depth=0; then
+      mark_apt_updated
+      return 0
+    fi
+
+    if (( retried_with_official_mirror == 0 )) && ask_yes_no "APT 更新失败，是否切换到 Ubuntu 官方源后重试" "y"; then
+      switch_ubuntu_sources_to_official
+      retried_with_official_mirror=1
+      force_update="force"
+      continue
+    fi
+
+    return 1
+  done
 }
 
 apt_install_fast() {
@@ -231,7 +325,7 @@ install_docker_if_needed() {
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $codename stable" | run_root tee /etc/apt/sources.list.d/docker.list > /dev/null
     
     info "更新源并安装 Docker"
-    apt_update_fast
+    apt_update_fast force
     apt_install_fast docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   else
     # 针对非 Debian 系统，或者降级走一键脚本
