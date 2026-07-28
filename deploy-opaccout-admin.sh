@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 使用方式：
-# chmod +x ./deploy-opacout-admin.sh
-# bash ./deploy-opacout-admin.sh
+# chmod +x ./deploy-opaccout-admin.sh
+# bash ./deploy-opaccout-admin.sh
 
 set -euo pipefail
 
@@ -16,10 +16,10 @@ warn() { printf "${Y}[WARN]${NC} %s\n" "$1"; }
 error() { printf "${R}[ERROR]${NC} %s\n" "$1" >&2; }
 ok() { printf "${G}[OK]${NC} %s\n" "$1"; }
 
-APP_SLUG="opacout-admin"
+APP_SLUG="opaccout-admin"
 DEFAULT_REPO_URL="https://github.com/tztmr/opaccout_admin.git"
 DEFAULT_BRANCH="main"
-DEFAULT_INSTALL_DIR="/opt/opacout_admin"
+DEFAULT_INSTALL_DIR="/opt/opaccout_admin"
 STATE_DIR="${HOME}/.${APP_SLUG}-deploy"
 STATE_FILE="${STATE_DIR}/state.env"
 
@@ -711,7 +711,7 @@ setup_https() {
 
 print_menu() {
   echo
-  echo "=========== opacout_admin Docker 部署脚本 ==========="
+  echo "=========== opaccout_admin Docker 部署脚本 ==========="
   echo "1) 拉代码 + 配置 .env + Docker 部署"
   echo "2) 接入域名 HTTPS"
   echo "3) 配置环境变量 (.env)"
