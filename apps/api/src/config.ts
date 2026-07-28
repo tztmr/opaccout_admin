@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { parseSocksProxyPool } from "./services/socks-fetch";
 
 const EnvironmentSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -17,6 +18,16 @@ const EnvironmentSchema = z.object({
     .refine((value) => new URL(value).protocol === "https:", {
       message: "QQ_OP_PROFILE_API_URL must use HTTPS"
     }),
+  QQ_OP_SOCKS_PROXY_URL: z.string().optional().refine((value) => {
+    try {
+      parseSocksProxyPool(value);
+      return true;
+    } catch {
+      return false;
+    }
+  }, {
+    message: "QQ_OP_SOCKS_PROXY_URL must contain valid SOCKS proxy entries"
+  }),
   QQ_OP_APP_ID: z.string().trim().min(1).max(100).default("1105602870"),
   QQ_OP_PROFILE_TIMEOUT_MS: z.coerce
     .number()
@@ -35,6 +46,7 @@ export type AppConfig = {
   mongoUri: string;
   douyinCheckApiUrl: URL;
   qqOpProfileApiUrl: URL;
+  qqOpSocksProxyUrls: URL[];
   qqOpAppId: string;
   qqOpProfileTimeoutMs: number;
   cookieSecure: boolean;
@@ -57,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string>): App
     mongoUri: parsed.MONGO_URI,
     douyinCheckApiUrl: new URL(parsed.DOUYIN_CHECK_API_URL),
     qqOpProfileApiUrl: new URL(parsed.QQ_OP_PROFILE_API_URL),
+    qqOpSocksProxyUrls: parseSocksProxyPool(parsed.QQ_OP_SOCKS_PROXY_URL),
     qqOpAppId: parsed.QQ_OP_APP_ID,
     qqOpProfileTimeoutMs: parsed.QQ_OP_PROFILE_TIMEOUT_MS,
     cookieSecure: parsed.COOKIE_SECURE

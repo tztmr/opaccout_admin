@@ -38,6 +38,7 @@ export function createOpProfileChecker({
   baseUrl,
   appId,
   fetchImpl = fetch,
+  fetchResolver,
   timeoutMs = 5_000,
   maxAttempts = 2,
   retryDelayMs = 300
@@ -45,6 +46,7 @@ export function createOpProfileChecker({
   baseUrl: URL;
   appId: string;
   fetchImpl?: typeof fetch;
+  fetchResolver?: () => Promise<typeof fetch> | typeof fetch;
   timeoutMs?: number;
   maxAttempts?: number;
   retryDelayMs?: number;
@@ -60,10 +62,19 @@ export function createOpProfileChecker({
     requestUrl.searchParams.set("oauth_consumer_key", appId);
     requestUrl.searchParams.set("openid", openid);
 
+    let resolvedFetch = fetchImpl;
+    if (fetchResolver) {
+      try {
+        resolvedFetch = await fetchResolver();
+      } catch {
+        resolvedFetch = fetchImpl;
+      }
+    }
+
     const attempts = Math.max(1, maxAttempts);
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       try {
-        const response = await fetchImpl(requestUrl, {
+        const response = await resolvedFetch(requestUrl, {
           method: "GET",
           headers: { accept: "application/json" },
           signal: AbortSignal.timeout(timeoutMs)

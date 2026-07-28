@@ -117,4 +117,26 @@ describe("createOpProfileChecker", () => {
       .resolves.toEqual({ kind: "success", nickname: "API昵称" });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
+
+  it("resolves the fetch implementation per request", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify({ ret: 0, msg: "", nickname: "代理昵称" }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    const fetchResolver = vi.fn(async () => fetchImpl);
+    const checker = createOpProfileChecker({
+      baseUrl: new URL("https://graph.qq.com/user/get_simple_userinfo"),
+      appId: "1105602870",
+      fetchResolver,
+      retryDelayMs: 0
+    });
+
+    await expect(checker("open|token|pay|pfkey|1782303418"))
+      .resolves.toEqual({ kind: "success", nickname: "代理昵称" });
+
+    expect(fetchResolver).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

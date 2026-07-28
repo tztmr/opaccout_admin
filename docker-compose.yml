@@ -37,6 +37,7 @@ services:
       MONGO_URI: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/${MONGO_DATABASE}?authSource=admin
       DOUYIN_CHECK_API_URL: ${DOUYIN_CHECK_API_URL:-https://unid.tztright.top/check}
       QQ_OP_PROFILE_API_URL: ${QQ_OP_PROFILE_API_URL:-https://graph.qq.com/user/get_simple_userinfo}
+      QQ_OP_SOCKS_PROXY_URL: ${QQ_OP_SOCKS_PROXY_URL:-}
       QQ_OP_APP_ID: ${QQ_OP_APP_ID:-1105602870}
       QQ_OP_PROFILE_TIMEOUT_MS: ${QQ_OP_PROFILE_TIMEOUT_MS:-5000}
       TZ: ${TZ:-Asia/Shanghai}

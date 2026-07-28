@@ -4,6 +4,7 @@ export type SettingRecord = {
   key: "admin";
   defaultPageSize: number;
   sessionHours: number;
+  qqOpSocksProxyPool: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -14,7 +15,8 @@ const SettingSchema = new Schema<SettingRecord>(
   {
     key: { type: String, required: true, enum: ["admin"], unique: true },
     defaultPageSize: { type: Number, required: true, min: 10, max: 100 },
-    sessionHours: { type: Number, required: true, min: 1, max: 168 }
+    sessionHours: { type: Number, required: true, min: 1, max: 168 },
+    qqOpSocksProxyPool: { type: String, required: true, default: "" }
   },
   { timestamps: true, versionKey: false }
 );

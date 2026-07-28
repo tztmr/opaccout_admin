@@ -70,6 +70,29 @@ QQ_OP_PROFILE_TIMEOUT_MS=5000
 ```
 
 QQ API 地址必须使用 HTTPS，超时时间允许设置为 100 至 30000 毫秒。
+如果 `graph.qq.com` 需要走代理，可额外配置：
+
+```dotenv
+QQ_OP_SOCKS_PROXY_URL=socks5://127.0.0.1:1080
+```
+
+也支持代理池，条目之间可用换行、英文逗号或分号分隔，例如：
+
+```dotenv
+QQ_OP_SOCKS_PROXY_URL=198.64.244.205:50101:tztright:t5sYiBK8tD,127.0.0.1:1081,socks5://user:pass@10.0.0.2:9000
+```
+
+支持的单条格式：
+
+- `socks5://host:port`
+- `socks5://user:pass@host:port`
+- `host:port`
+- `host:port:user:pass`
+- `user:pass@host:port`
+
+请求会按代理池轮询起始节点；当前代理连不上时，会自动切换到下一个代理继续请求。
+
+该代理只作用于 QQ OP 昵称查询请求，不影响抖音检测接口或其他 API。
 
 启动。项目路径包含中文时使用传统构建器，可避开部分 Docker Desktop
 版本的 Buildx Bake 路径编码问题：

@@ -11,7 +11,10 @@ import { createMongooseAdminRepository } from "./services/admin-repository";
 import { createDouyinChecker } from "./services/douyin-check";
 import { createSecretCipher } from "./services/encryption";
 import { startImportWorker } from "./services/import-worker";
+import { SettingModel } from "./models/setting";
 import { createOpProfileChecker } from "./services/op-profile";
+import { parseSocksProxyPool } from "./services/socks-fetch";
+import { createSocksFetch } from "./services/socks-fetch";
 import { normalizeBannedSaleStatuses } from "./services/sale-status-policy";
 
 async function main() {
@@ -27,6 +30,19 @@ async function main() {
   const checkOpProfile = createOpProfileChecker({
     baseUrl: config.qqOpProfileApiUrl,
     appId: config.qqOpAppId,
+    fetchResolver: async () => {
+      try {
+        const settings = await SettingModel.findOne({ key: "admin" }).lean();
+        const storedPool = settings?.qqOpSocksProxyPool?.trim()
+          ? parseSocksProxyPool(settings.qqOpSocksProxyPool)
+          : config.qqOpSocksProxyUrls;
+        return storedPool.length ? createSocksFetch(storedPool) : fetch;
+      } catch {
+        return config.qqOpSocksProxyUrls.length
+          ? createSocksFetch(config.qqOpSocksProxyUrls)
+          : fetch;
+      }
+    },
     timeoutMs: config.qqOpProfileTimeoutMs
   });
   const accounts = createAccountsService({
