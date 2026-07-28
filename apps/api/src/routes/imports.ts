@@ -1,11 +1,37 @@
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
+import { Worker } from "node:worker_threads";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { ImportJobModel } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
 import type { SecretCipher } from "../services/encryption";
 import { exportTemplate } from "../services/exporter";
-import { parseImport } from "../services/import-parser";
+import type { ImportParseResult } from "../services/import-parser";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const workerPath = process.env.NODE_ENV === "production" 
+  ? path.join(__dirname, "services/import-parser-worker.cjs") 
+  : path.join(__dirname, "../services/import-parser-worker.ts");
+
+function parseImportAsync(buffer: Buffer, fileName: string): Promise<ImportParseResult> {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(workerPath, {
+      workerData: { buffer, fileName },
+      execArgv: process.env.NODE_ENV === "production" ? [] : ["--import", "tsx"]
+    });
+    worker.on("message", (msg) => {
+      if (msg.success) resolve(msg.result);
+      else reject(new Error(msg.error));
+    });
+    worker.on("error", reject);
+    worker.on("exit", (code) => {
+      if (code !== 0) reject(new Error(`Worker stopped with exit code ${code}`));
+    });
+  });
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -22,7 +48,7 @@ export function createImportsRouter(cipher: SecretCipher): Router {
   router.post("/preview", upload.single("file"), async (req, res, next) => {
     try {
       if (!req.file) throw new Error("IMPORT_FILE_REQUIRED");
-      const parsed = parseImport(req.file.buffer, req.file.originalname);
+      const parsed = await parseImportAsync(req.file.buffer, req.file.originalname);
       const stagedRows = parsed.rows.map((row) => ({
         ...row,
         opSecret: cipher.encrypt(row.opSecret)
