@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, UploadCloud, FileText } from "lucide-react";
 import { useEffect, useState, type DragEvent, type FormEvent } from "react";
 import { api } from "../api";
 
@@ -45,6 +45,7 @@ export function ImportsPage() {
   const [strategy, setStrategy] = useState<"skip" | "update">("skip");
   const [notice, setNotice] = useState("");
   const [dragActive, setDragActive] = useState(false);
+  const [pasteText, setPasteText] = useState("");
   const jobs = useQuery({
     queryKey: ["import-jobs"],
     queryFn: () => api<ImportJob[]>("/api/imports"),
@@ -98,6 +99,29 @@ export function ImportsPage() {
     event.preventDefault();
     handleFile(new FormData(event.currentTarget).get("file") as File | null);
   };
+  const handlePasteSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!pasteText.trim()) return;
+
+    const lines = pasteText.split('\n').map(line => line.trim()).filter(Boolean);
+    const headers = ["抖音号", "注册时间", "OP名称", "OP卡密", "归属人", "售卖状态", "备注"];
+
+    const escapeCsv = (val: string) => `"${val.replace(/"/g, '""')}"`;
+    const csvLines = [headers.map(escapeCsv).join(',')];
+
+    for (const line of lines) {
+      const parts = line.split('----').map(p => p.trim());
+      while (parts.length < 7) parts.push('');
+      csvLines.push(parts.slice(0, 7).map(escapeCsv).join(','));
+    }
+
+    const csvContent = csvLines.join('\n');
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv' });
+    const file = new File([blob], '粘贴导入.csv', { type: 'text/csv' });
+
+    upload.mutate(file);
+    setPasteText("");
+  };
   const onDragOver = (event: DragEvent<HTMLFormElement>) => {
     event.preventDefault();
     setDragActive(true);
@@ -122,6 +146,19 @@ export function ImportsPage() {
         <p>文件最大 10 MB。OP卡密只在服务端加密暂存，预览不显示明文。支持把文件直接拖到这里。</p>
         <label className="file-picker"><input name="file" type="file" accept=".xlsx,.xls,.csv" required/><span>选择文件</span></label>
         <button className="primary" disabled={upload.isPending}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
+      </form>
+      <form className="upload-card paste-card" onSubmit={handlePasteSubmit}>
+        <div className="upload-icon" style={{ background: '#fdf3ed', color: '#e87c47' }}><FileText size={28}/></div>
+        <h2>文本快捷导入</h2>
+        <p>支持多行粘贴，各字段用 <code>----</code> 分隔</p>
+        <textarea 
+          className="paste-input"
+          value={pasteText}
+          onChange={e => setPasteText(e.target.value)}
+          placeholder="抖音号----注册时间----OP名称----OP卡密----归属人----售卖状态----备注"
+          required
+        />
+        <button className="primary" disabled={upload.isPending || !pasteText.trim()}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
       </form>
       <div className="guide-card">
         <FileSpreadsheet size={25}/><h2>表头要求</h2>
