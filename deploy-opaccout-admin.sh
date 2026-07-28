@@ -38,6 +38,16 @@ trim() {
 
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+apt_update_fast() {
+  run_root env DEBIAN_FRONTEND=noninteractive apt-get update \
+    -o Acquire::Languages=none \
+    -o Acquire::Retries=3
+}
+
+apt_install_fast() {
+  run_root env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"
+}
+
 run_root() {
   if [[ "$(id -u)" -eq 0 ]]; then
     "$@"
@@ -50,6 +60,19 @@ run_root() {
   return 1
 }
 
+ensure_sudo_session() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    return 0
+  fi
+  if ! command_exists sudo; then
+    error "需要 root 或 sudo 权限"
+    exit 1
+  fi
+
+  info "接下来需要 sudo 权限，系统可能会提示你输入密码"
+  sudo -v
+}
+
 ensure_root_capability() {
   if [[ "$(id -u)" -eq 0 ]]; then
     return 0
@@ -58,10 +81,7 @@ ensure_root_capability() {
     error "需要 root 或 sudo 权限"
     exit 1
   fi
-  if ! sudo -n true 2>/dev/null; then
-    error "当前账号需要先具备 sudo 授权"
-    exit 1
-  fi
+  ensure_sudo_session
 }
 
 prompt_default() {
@@ -164,14 +184,18 @@ ensure_basic_packages() {
   fi
 
   ensure_root_capability
-  info "安装 Git / curl"
+  info "检测到缺少 Git 或 curl，开始安装基础依赖"
   if command_exists apt-get; then
-    run_root apt-get update -y -qq
-    run_root apt-get install -y -qq ca-certificates curl git gnupg lsb-release
+    info "正在执行 apt-get update（已关闭语言包索引，加快海外服务器速度）"
+    apt_update_fast
+    info "正在安装 ca-certificates curl git gnupg lsb-release"
+    apt_install_fast ca-certificates curl git gnupg lsb-release
   elif command_exists dnf; then
-    run_root dnf install -y -q ca-certificates curl git
+    info "正在安装 ca-certificates curl git"
+    run_root dnf install -y ca-certificates curl git
   elif command_exists yum; then
-    run_root yum install -y -q ca-certificates curl git
+    info "正在安装 ca-certificates curl git"
+    run_root yum install -y ca-certificates curl git
   else
     error "不支持的系统包管理器，请手动安装 curl 与 git"
     return 1
@@ -228,12 +252,16 @@ install_nginx_if_needed() {
   ensure_root_capability
   info "检测到未安装 Nginx，开始自动安装"
   if command_exists apt-get; then
-    run_root apt-get update -y -qq
-    run_root apt-get install -y -qq nginx
+    info "正在执行 apt-get update（已关闭语言包索引，加快海外服务器速度）"
+    apt_update_fast
+    info "正在安装 nginx"
+    apt_install_fast nginx
   elif command_exists dnf; then
-    run_root dnf install -y -q nginx
+    info "正在安装 nginx"
+    run_root dnf install -y nginx
   elif command_exists yum; then
-    run_root yum install -y -q nginx
+    info "正在安装 nginx"
+    run_root yum install -y nginx
   else
     error "不支持的系统包管理器，请手动安装 Nginx"
     return 1
@@ -253,12 +281,16 @@ install_certbot_if_needed() {
   ensure_root_capability
   info "检测到未安装 certbot，开始自动安装"
   if command_exists apt-get; then
-    run_root apt-get update -y -qq
-    run_root apt-get install -y -qq certbot python3-certbot-nginx
+    info "正在执行 apt-get update（已关闭语言包索引，加快海外服务器速度）"
+    apt_update_fast
+    info "正在安装 certbot 和 python3-certbot-nginx"
+    apt_install_fast certbot python3-certbot-nginx
   elif command_exists dnf; then
-    run_root dnf install -y -q certbot python3-certbot-nginx || run_root dnf install -y -q certbot-nginx
+    info "正在安装 certbot"
+    run_root dnf install -y certbot python3-certbot-nginx || run_root dnf install -y certbot-nginx
   elif command_exists yum; then
-    run_root yum install -y -q certbot python3-certbot-nginx || run_root yum install -y -q certbot-nginx
+    info "正在安装 certbot"
+    run_root yum install -y certbot python3-certbot-nginx || run_root yum install -y certbot-nginx
   else
     error "不支持的系统包管理器，请手动安装 certbot"
     return 1
@@ -597,6 +629,109 @@ down_app() {
   fi
 }
 
+get_mongo_credentials() {
+  local env_file="${PROJECT_DIR}/.env"
+  MONGO_USER="$(read_env_value "$env_file" "MONGO_ROOT_USERNAME")"
+  MONGO_PASS="$(read_env_value "$env_file" "MONGO_ROOT_PASSWORD")"
+  MONGO_DB="$(read_env_value "$env_file" "MONGO_DATABASE")"
+}
+
+list_admin_users_db() {
+  load_state || { error "请先执行应用部署"; return 1; }
+  assert_project_layout
+  ensure_docker_ready
+
+  get_mongo_credentials
+
+  info "管理员账号列表："
+  docker_compose exec -T mongo mongosh --quiet \
+    --host 127.0.0.1 \
+    --username "$MONGO_USER" \
+    --password "$MONGO_PASS" \
+    --authenticationDatabase admin \
+    "$MONGO_DB" \
+    --eval 'db.admins.find({}, { username: 1, createdAt: 1, _id: 1 }).toArray().forEach(a => print(`ID: ${a._id} | 账号: ${a.username} | 创建时间: ${a.createdAt}`))' || {
+      error "获取管理员列表失败，请检查 MongoDB 服务是否正常运行"
+      return 1
+    }
+}
+
+reset_admin_password() {
+  load_state || { error "请先执行应用部署"; return 1; }
+  assert_project_layout
+  ensure_docker_ready
+
+  local new_password
+  new_password="$(prompt_default "新的管理员密码" "")"
+  [[ -n "$new_password" ]] || { error "新密码不能为空"; return 1; }
+
+  info "正在生成密码 Hash..."
+  local digest
+  digest="$(docker_compose exec -T api node -e '
+    const crypto = require("crypto");
+    const util = require("util");
+    const scrypt = util.promisify(crypto.scrypt);
+    const password = process.argv[1];
+    (async () => {
+      const salt = crypto.randomBytes(16);
+      const hash = await scrypt(password, salt, 64);
+      console.log(JSON.stringify({
+        passwordSalt: salt.toString("base64"),
+        passwordHash: hash.toString("base64")
+      }));
+    })();
+  ' "$new_password")" || {
+    error "密码 Hash 生成失败，请检查 api 容器是否运行"
+    return 1
+  }
+
+  local salt hash
+  salt="$(echo "$digest" | grep -o '"passwordSalt":"[^"]*' | cut -d'"' -f4)"
+  hash="$(echo "$digest" | grep -o '"passwordHash":"[^"]*' | cut -d'"' -f4)"
+
+  [[ -n "$salt" && -n "$hash" ]] || { error "密码 Hash 解析失败"; return 1; }
+
+  get_mongo_credentials
+
+  info "正在更新数据库..."
+  local update_result
+  update_result="$(docker_compose exec -T mongo mongosh --quiet \
+    --host 127.0.0.1 \
+    --username "$MONGO_USER" \
+    --password "$MONGO_PASS" \
+    --authenticationDatabase admin \
+    "$MONGO_DB" \
+    --eval "db.admins.updateOne({ _id: 'primary' }, { \$set: { passwordSalt: '${salt}', passwordHash: '${hash}', updatedAt: new Date() } })")" || {
+      error "更新数据库失败"
+      return 1
+    }
+
+  if echo "$update_result" | grep -q "matchedCount: 1"; then
+    ok "管理员密码已重置"
+  elif echo "$update_result" | grep -q "matchedCount: 0"; then
+    warn "未找到管理员账号，可能系统还未初始化"
+  else
+    warn "操作完成，但返回了未知的状态：$update_result"
+  fi
+}
+
+uninstall_app() {
+  load_state || { error "请先执行应用部署"; return 1; }
+  assert_project_layout
+  ensure_docker_ready
+
+  warn "将停止并删除容器和镜像。如果不保留数据，MongoDB 数据卷也将被删除。"
+  if ask_yes_no "确认继续卸载服务" "n"; then
+    if ask_yes_no "是否同时删除数据库数据卷（删除后无法恢复！）" "n"; then
+      docker_compose down -v --rmi all
+      ok "服务及数据已完全删除"
+    else
+      docker_compose down --rmi all
+      ok "服务已删除，MongoDB 数据卷已保留"
+    fi
+  fi
+}
+
 configure_env_command() {
   load_state || { error "请先执行 deploy"; return 1; }
   assert_project_layout
@@ -720,6 +855,9 @@ print_menu() {
   echo "6) 重启服务"
   echo "7) 拉取最新代码并重建"
   echo "8) 停止服务（保留数据卷）"
+  echo "9) 卸载服务及数据"
+  echo "10) 查看管理员账号"
+  echo "11) 重置管理员密码"
   echo "0) 退出"
   echo "===================================================="
 }
@@ -727,7 +865,7 @@ print_menu() {
 interactive_main() {
   while true; do
     print_menu
-    printf '请选择 [0-8]: ' >&2
+    printf '请选择 [0-11]: ' >&2
     local choice
     read -r choice
     choice="$(trim "$choice")"
@@ -746,6 +884,9 @@ interactive_main() {
       6) restart_app ;;
       7) rebuild_app ;;
       8) down_app ;;
+      9) uninstall_app ;;
+      10) list_admin_users_db ;;
+      11) reset_admin_password ;;
       0) exit 0 ;;
       *) warn "无效选项" ;;
     esac
@@ -762,12 +903,15 @@ main() {
     restart) restart_app ;;
     rebuild) rebuild_app ;;
     down) down_app ;;
+    uninstall) uninstall_app ;;
+    admins) list_admin_users_db ;;
+    reset-admin-password) reset_admin_password ;;
     "")
       interactive_main
       ;;
     *)
       error "不支持的命令: $1"
-      echo "可用命令: deploy | https | env | status | logs [api|web|mongo] | restart | rebuild | down"
+      echo "可用命令: deploy | https | env | status | logs [api|web|mongo] | restart | rebuild | down | uninstall | admins | reset-admin-password"
       exit 1
       ;;
   esac

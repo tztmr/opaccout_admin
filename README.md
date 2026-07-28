@@ -47,6 +47,8 @@ chmod +x ./deploy-opaccout-admin.sh
 ./deploy-opaccout-admin.sh status
 ./deploy-opaccout-admin.sh logs api
 ./deploy-opaccout-admin.sh https
+./deploy-opaccout-admin.sh admins
+./deploy-opaccout-admin.sh reset-admin-password
 ```
 
 ```bash
