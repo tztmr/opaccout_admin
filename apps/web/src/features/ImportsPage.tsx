@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, UploadCloud } from "lucide-react";
-import { useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useState, type DragEvent, type FormEvent } from "react";
 import { api } from "../api";
 
 type Preview = {
@@ -74,6 +74,26 @@ export function ImportsPage() {
   const handleFile = (file: File | null | undefined) => {
     if (file instanceof File && file.size) upload.mutate(file);
   };
+
+  useEffect(() => {
+    const isFileDrag = (event: DragEvent | globalThis.DragEvent) => {
+      if ((event.dataTransfer?.files?.length ?? 0) > 0) return true;
+      const types = event.dataTransfer?.types;
+      return types ? Array.from(types).includes("Files") : false;
+    };
+    const preventWindowFileDrop = (event: globalThis.DragEvent) => {
+      if (!isFileDrag(event)) return;
+      event.preventDefault();
+    };
+
+    window.addEventListener("dragover", preventWindowFileDrop);
+    window.addEventListener("drop", preventWindowFileDrop);
+    return () => {
+      window.removeEventListener("dragover", preventWindowFileDrop);
+      window.removeEventListener("drop", preventWindowFileDrop);
+    };
+  }, []);
+
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     handleFile(new FormData(event.currentTarget).get("file") as File | null);

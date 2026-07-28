@@ -28,6 +28,25 @@ function renderPage() {
 }
 
 describe("imports page", () => {
+  it("prevents the browser from navigating away on window file drops", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json([])));
+
+    renderPage();
+    await screen.findByText("上传账号文件");
+
+    const event = new Event("drop", { bubbles: true, cancelable: true });
+    const file = new File(["douyinId\n94946893573"], "accounts.csv", {
+      type: "text/csv"
+    });
+    Object.defineProperty(event, "dataTransfer", {
+      value: { files: [file] }
+    });
+
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it("uploads a dropped file for preview", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
