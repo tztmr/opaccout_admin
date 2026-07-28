@@ -213,7 +213,12 @@ install_docker_if_needed() {
   ensure_root_capability
 
   info "检测到未安装 Docker Compose，开始自动安装 Docker"
-  curl -fsSL https://get.docker.com | run_root sh
+  
+  if ask_yes_no "是否使用阿里云 Docker 镜像源加速安装（海外机选 n）" "n"; then
+    curl -fsSL https://get.docker.com | run_root env CHANNEL=stable sh -s docker --mirror Aliyun
+  else
+    curl -fsSL https://get.docker.com | run_root sh
+  fi
 
   if command_exists systemctl; then
     run_root systemctl enable --now docker
