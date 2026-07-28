@@ -4,7 +4,9 @@ import { parseImport } from "./import-parser";
 if (parentPort) {
   try {
     const { buffer, fileName } = workerData;
-    const result = parseImport(buffer, fileName);
+    // workerData passes Buffer as Uint8Array, we need to convert it back to Buffer
+    const realBuffer = Buffer.from(buffer);
+    const result = parseImport(realBuffer, fileName);
     parentPort.postMessage({ success: true, result });
   } catch (error) {
     parentPort.postMessage({
