@@ -55,6 +55,12 @@ export function createAccountsRouter(service: AccountsService): Router {
       res.json(await service.batchRecheck(value.ids, context(req)));
     } catch (error) { next(error); }
   });
+  router.post("/batch-recheck-op", async (req, res, next) => {
+    try {
+      const value = BatchIdsSchema.parse(req.body);
+      res.json(await service.batchRecheckOp(value.ids, context(req)));
+    } catch (error) { next(error); }
+  });
   router.get("/:id", async (req, res, next) => {
     try { res.json(await service.get(String(req.params.id))); } catch (error) { next(error); }
   });
@@ -69,6 +75,9 @@ export function createAccountsRouter(service: AccountsService): Router {
   });
   router.post("/:id/recheck", async (req, res, next) => {
     try { res.json(await service.recheck(String(req.params.id), context(req))); } catch (error) { next(error); }
+  });
+  router.post("/:id/recheck-op", async (req, res, next) => {
+    try { res.json(await service.recheckOp(String(req.params.id), context(req))); } catch (error) { next(error); }
   });
   return router;
 }

@@ -11,13 +11,14 @@ describe("account filter state", () => {
 
   it("includes the owner in unselected exports", () => {
     const result = buildAccountExportParams(
-      new URLSearchParams("owner=张三&saleStatus=unknown&page=2"),
+      new URLSearchParams("owner=张三&saleStatus=unknown&sortDirection=desc&page=2"),
       new Set()
     );
 
     expect(result.get("format")).toBe("xlsx");
     expect(result.get("owner")).toBe("张三");
     expect(result.get("saleStatus")).toBe("unknown");
+    expect(result.get("sortDirection")).toBe("desc");
     expect(result.has("page")).toBe(false);
   });
 

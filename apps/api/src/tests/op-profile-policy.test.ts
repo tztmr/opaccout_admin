@@ -1,6 +1,9 @@
 import type { AccountInput } from "@douyin-admin/shared";
 import { describe, expect, it } from "vitest";
-import { applyOpProfileResult } from "../services/op-profile-policy";
+import {
+  applyOpProfileResult,
+  resolveAccountStatus
+} from "../services/op-profile-policy";
 
 const input: AccountInput = {
   douyinId: "94946893573",
@@ -78,5 +81,34 @@ describe("applyOpProfileResult", () => {
 
     expect(result.remark).toHaveLength(1000);
     expect(result.remark).toMatch(/^原+ \| OP: 错+$/);
+  });
+});
+
+describe("resolveAccountStatus", () => {
+  it("marks OP token invalid as op_invalid", () => {
+    expect(
+      resolveAccountStatus("normal", {
+        kind: "message",
+        message: "token is invalid"
+      })
+    ).toBe("op_invalid");
+  });
+
+  it("keeps detected Douyin status for other OP outcomes", () => {
+    expect(resolveAccountStatus("banned", { kind: "invalid-openid" })).toBe(
+      "banned"
+    );
+    expect(
+      resolveAccountStatus("violation", {
+        kind: "message",
+        message: "something else"
+      })
+    ).toBe("violation");
+    expect(
+      resolveAccountStatus("unknown", {
+        kind: "success",
+        nickname: "昵称"
+      })
+    ).toBe("unknown");
   });
 });

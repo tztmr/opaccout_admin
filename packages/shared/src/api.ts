@@ -10,7 +10,7 @@ export type ApiErrorBody = {
 export type PagedResponse<T> = {
   items: T[];
   page: number;
-  pageSize: number;
+  pageSize: number | "all";
   total: number;
   totalPages: number;
 };

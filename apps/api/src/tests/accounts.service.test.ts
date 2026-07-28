@@ -37,7 +37,7 @@ function accountDocument(overrides: Record<string, unknown> = {}) {
 
 function dependencies(
   model: Record<string, unknown>,
-  accountStatus: "normal" | "violation" | "banned" = "normal"
+  accountStatus: "normal" | "violation" | "banned" | "unknown" | "op_invalid" = "normal"
 ) {
   return {
     model: model as unknown as Model<AccountRecord>,
@@ -219,7 +219,36 @@ describe("accounts service", () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       opName: "提交名称",
       saleStatus: "unknown",
+      accountStatus: "op_invalid",
       remark: "原备注 | OP: token is invalid"
+    }));
+  });
+
+  it("stores unknown account status when Douyin check cannot resolve sec_uid", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument(value)
+    );
+    const deps = dependencies({ create });
+    const { DouyinCheckError } = await import("../services/douyin-check");
+    deps.checkDouyinId.mockRejectedValue(
+      new DouyinCheckError("DOUYIN_RESPONSE_INVALID", true)
+    );
+    const service = createAccountsService(deps);
+
+    await service.create({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-28",
+      opName: "提交名称",
+      opSecret: "openid|token|pay|pfkey|1782303418",
+      owner: "小王",
+      saleStatus: "unknown",
+      remark: ""
+    }, context);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      secUid: "",
+      accountStatus: "unknown",
+      saleStatus: "unknown"
     }));
   });
 
@@ -346,6 +375,66 @@ describe("accounts service", () => {
     expect(result.saleStatus).toBe("disabled");
   });
 
+  it("refreshes the OP nickname and clears op_invalid when the OP token is valid", async () => {
+    const account = accountDocument({
+      opName: "旧昵称",
+      accountStatus: "op_invalid",
+      saleStatus: "unknown"
+    });
+    const deps = dependencies({
+      findById: vi.fn(async () => account)
+    });
+    deps.cipher.decrypt = vi.fn(() => "openid|token|pay|pfkey|1782303418");
+    deps.checkOpProfile.mockResolvedValue({
+      kind: "success",
+      nickname: "API新昵称"
+    });
+    const service = createAccountsService(deps);
+
+    const result = await service.recheckOp(String(account._id), context);
+
+    expect(deps.cipher.decrypt).toHaveBeenCalledWith(account.opSecret);
+    expect(deps.checkOpProfile).toHaveBeenCalledWith(
+      "openid|token|pay|pfkey|1782303418"
+    );
+    expect(deps.checkDouyinId).toHaveBeenCalledWith(account.douyinId);
+    expect(account.save).toHaveBeenCalledOnce();
+    expect(result.opName).toBe("API新昵称");
+    expect(result.accountStatus).toBe("normal");
+  });
+
+  it("batch rechecks OP and reports individual failures", async () => {
+    const first = accountDocument({ _id: "507f1f77bcf86cd799439011" });
+    const second = accountDocument({ _id: "507f1f77bcf86cd799439012" });
+    const deps = dependencies({
+      findById: vi.fn(async (id: string) => {
+        if (id === String(first._id)) return first;
+        if (id === String(second._id)) return second;
+        return null;
+      })
+    });
+    deps.cipher.decrypt = vi.fn((value) =>
+      value === first.opSecret
+        ? "openid|token-a|pay|pfkey|1782303418"
+        : "openid|token-b|pay|pfkey|1782303418"
+    );
+    deps.checkOpProfile
+      .mockResolvedValueOnce({ kind: "success", nickname: "第一条" })
+      .mockRejectedValueOnce(new Error("OP_RECHECK_FAILED"));
+    const service = createAccountsService(deps);
+
+    const result = await service.batchRecheckOp(
+      [String(first._id), String(second._id)],
+      context
+    );
+
+    expect(result.succeeded).toHaveLength(1);
+    expect(result.succeeded[0]?.opName).toBe("第一条");
+    expect(result.failed).toEqual([
+      { id: String(second._id), code: "OP_RECHECK_FAILED" }
+    ]);
+  });
+
   it("rejects manually unlocking a banned account", async () => {
     const account = accountDocument({
       accountStatus: "banned",
@@ -412,10 +501,16 @@ describe("accounts service", () => {
 
   it("adds an exact owner to list filters", async () => {
     const lean = vi.fn(async () => []);
-    const limit = vi.fn(() => ({ lean }));
-    const skip = vi.fn(() => ({ limit }));
-    const sort = vi.fn(() => ({ skip }));
-    const find = vi.fn(() => ({ sort }));
+    const query = {
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      lean
+    };
+    query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    const find = vi.fn(() => query);
     const countDocuments = vi.fn(async () => 0);
     const aggregate = vi.fn(async () => []);
     const service = createAccountsService(
@@ -425,6 +520,88 @@ describe("accounts service", () => {
     await service.list({ owner: "张三" });
 
     expect(find).toHaveBeenCalledWith({ owner: "张三" });
+    expect(query.limit).toHaveBeenCalledWith(20);
     expect(countDocuments).toHaveBeenCalledWith({ owner: "张三" });
+  });
+
+  it("matches each keyword line and defaults to ascending registered time order", async () => {
+    const lean = vi.fn(async () => []);
+    const query = {
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      lean
+    };
+    query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    const find = vi.fn(() => query);
+    const countDocuments = vi.fn(async () => 0);
+    const aggregate = vi.fn(async () => []);
+    const service = createAccountsService(
+      dependencies({ find, countDocuments, aggregate })
+    );
+
+    await service.list({ keyword: "94946893573\n93180119509" });
+
+    const filter = ((find.mock.calls[0] as unknown[] | undefined)?.[0] ??
+      {}) as Record<string, unknown>;
+    expect(filter.searchText).toBeInstanceOf(RegExp);
+    expect((filter.searchText as RegExp).test("94946893573")).toBe(true);
+    expect((filter.searchText as RegExp).test("93180119509")).toBe(true);
+    expect(query.sort).toHaveBeenCalledWith({ registeredAt: 1, _id: 1 });
+  });
+
+  it("supports descending registered time order", async () => {
+    const lean = vi.fn(async () => []);
+    const query = {
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      lean
+    };
+    query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    const find = vi.fn(() => query);
+    const countDocuments = vi.fn(async () => 0);
+    const aggregate = vi.fn(async () => []);
+    const service = createAccountsService(
+      dependencies({ find, countDocuments, aggregate })
+    );
+
+    await service.list({ sortDirection: "desc" });
+
+    expect(query.sort).toHaveBeenCalledWith({ registeredAt: -1, _id: -1 });
+  });
+
+  it("returns all matching accounts when pageSize is all", async () => {
+    const lean = vi.fn(async () => []);
+    const query = {
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      lean
+    };
+    query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    const find = vi.fn(() => query);
+    const countDocuments = vi.fn(async () => 42);
+    const aggregate = vi.fn(async () => []);
+    const service = createAccountsService(
+      dependencies({ find, countDocuments, aggregate })
+    );
+
+    const result = await service.list({ pageSize: "all" });
+
+    expect(query.skip).toHaveBeenCalledWith(0);
+    expect(query.limit).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      page: 1,
+      pageSize: "all",
+      total: 42,
+      totalPages: 1
+    });
   });
 });

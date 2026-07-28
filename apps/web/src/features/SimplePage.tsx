@@ -29,6 +29,7 @@ const actionLabels: Record<string, string> = {
   "account.batch_updated": "批量更新",
   "account.batch_deleted": "批量删除",
   "account.rechecked": "检测账号",
+  "account.op_rechecked": "检测OP",
   "account.batch_rechecked": "批量检测",
   "account.secret_revealed": "查看OP卡密",
   "account.exported": "导出账号"

@@ -6,6 +6,16 @@ describe("export account filters", () => {
     expect(buildExportFilter({ owner: " 张三 " })).toEqual({ owner: "张三" });
   });
 
+  it("matches each non-empty keyword line in batch search", () => {
+    const filter = buildExportFilter({ keyword: "94946893573\n93180119509\n" });
+
+    expect(filter.searchText).toBeInstanceOf(RegExp);
+    const expression = filter.searchText as RegExp;
+    expect(expression.test("94946893573")).toBe(true);
+    expect(expression.test("93180119509")).toBe(true);
+    expect(expression.test("12345678901")).toBe(false);
+  });
+
   it("preserves existing status and registration date filters", () => {
     expect(buildExportFilter({
       saleStatus: "recovered",

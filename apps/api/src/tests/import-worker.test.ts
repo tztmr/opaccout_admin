@@ -26,8 +26,10 @@ const context: AuditContext = {
 
 function accountServiceStub() {
   return {
-    create: vi.fn(async () => ({})),
-    update: vi.fn(async () => ({}))
+    create: vi.fn(async () => ({ _id: "created-id", opName: "API昵称" })),
+    update: vi.fn(async () => ({ _id: "updated-id", opName: "" })),
+    recheck: vi.fn(async () => ({})),
+    recheckOp: vi.fn(async () => ({ _id: "updated-id", opName: "" }))
   } as unknown as AccountsService;
 }
 
@@ -78,7 +80,49 @@ describe("processImportRow", () => {
       input,
       context
     );
+    expect(accounts.recheck).toHaveBeenCalledWith("existing-id", context);
+    expect(accounts.recheckOp).toHaveBeenCalledWith("existing-id", context);
     expect(accounts.create).not.toHaveBeenCalled();
+  });
+
+  it("retries a retryable import failure once before succeeding", async () => {
+    const accounts = accountServiceStub();
+    vi.mocked(accounts.create)
+      .mockRejectedValueOnce(new DouyinCheckError("DOUYIN_TIMEOUT", true))
+      .mockResolvedValueOnce({ _id: "created-id", opName: "API昵称" } as never);
+
+    const result = await processImportRow(
+      accounts,
+      input,
+      "skip",
+      context,
+      vi.fn(async () => null)
+    );
+
+    expect(result).toBe("created");
+    expect(accounts.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("backfills an unknown OP name after import when detection returns empty", async () => {
+    const accounts = accountServiceStub();
+    vi.mocked(accounts.create).mockResolvedValueOnce({
+      _id: "created-id",
+      opName: ""
+    } as never);
+
+    await processImportRow(
+      accounts,
+      input,
+      "skip",
+      context,
+      vi.fn(async () => null)
+    );
+
+    expect(accounts.update).toHaveBeenCalledWith(
+      "created-id",
+      { opName: "-未知-" },
+      context
+    );
   });
 
   it("classifies douyin and app errors for import failure reporting", () => {

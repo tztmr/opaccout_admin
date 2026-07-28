@@ -72,22 +72,32 @@ describe("createOpProfileChecker", () => {
     ["network", async () => { throw new TypeError("network"); }],
     ["non-json", async () => new Response("<html>", { status: 200 })],
     ["http error", async () => new Response("bad gateway", { status: 502 })]
-  ])("normalizes %s failure without retrying", async (_name, implementation) => {
+  ])("normalizes %s failure after two attempts", async (_name, implementation) => {
     const fetchImpl = vi.fn<typeof fetch>(implementation);
     const checker = createOpProfileChecker({
       baseUrl: new URL("https://graph.qq.com/user/get_simple_userinfo"),
       appId: "1105602870",
-      fetchImpl
+      fetchImpl,
+      retryDelayMs: 0
     });
 
     await expect(checker("open|token|pay|pfkey|1782303418"))
       .resolves.toEqual({ kind: "unavailable" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("normalizes a timeout without retrying", async () => {
+  it("recovers from a timeout on the second attempt", async () => {
+    let calls = 0;
     const fetchImpl = vi.fn<typeof fetch>(async (_input, init) =>
-      new Promise<Response>((_resolve, reject) => {
+      new Promise<Response>((resolve, reject) => {
+        calls += 1;
+        if (calls === 2) {
+          resolve(new Response(JSON.stringify({ ret: 0, msg: "", nickname: "API昵称" }), {
+            status: 200,
+            headers: { "content-type": "application/json" }
+          }));
+          return;
+        }
         init?.signal?.addEventListener(
           "abort",
           () => reject(init.signal?.reason),
@@ -99,11 +109,12 @@ describe("createOpProfileChecker", () => {
       baseUrl: new URL("https://graph.qq.com/user/get_simple_userinfo"),
       appId: "1105602870",
       fetchImpl,
-      timeoutMs: 5
+      timeoutMs: 5,
+      retryDelayMs: 0
     });
 
     await expect(checker("open|token|pay|pfkey|1782303418"))
-      .resolves.toEqual({ kind: "unavailable" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+      .resolves.toEqual({ kind: "success", nickname: "API昵称" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });

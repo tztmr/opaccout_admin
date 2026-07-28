@@ -1,4 +1,4 @@
-import type { AccountInput } from "@douyin-admin/shared";
+import type { AccountInput, AccountStatus } from "@douyin-admin/shared";
 import type { OpProfileCheckResult } from "./op-profile";
 
 const MAX_OP_NAME_LENGTH = 100;
@@ -16,6 +16,13 @@ function appendOpRemark(remark: string, message: string): string {
     MAX_REMARK_LENGTH - REMARK_SEPARATOR.length - note.length
   );
   return `${remark.slice(0, originalLength)}${REMARK_SEPARATOR}${note}`;
+}
+
+export function isOpTokenInvalid(result: OpProfileCheckResult): boolean {
+  return (
+    result.kind === "message" &&
+    result.message.trim().toLowerCase() === "token is invalid"
+  );
 }
 
 export function applyOpProfileResult(
@@ -38,4 +45,12 @@ export function applyOpProfileResult(
       result.kind === "message" ? result.message : "查询失败"
     )
   };
+}
+
+export function resolveAccountStatus(
+  detectedStatus: AccountStatus,
+  opResult: OpProfileCheckResult
+): AccountStatus {
+  if (isOpTokenInvalid(opResult)) return "op_invalid";
+  return detectedStatus;
 }

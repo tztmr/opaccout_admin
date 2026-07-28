@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, UploadCloud } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useState, type DragEvent, type FormEvent } from "react";
 import { api } from "../api";
 
 type Preview = {
@@ -44,6 +44,7 @@ export function ImportsPage() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [strategy, setStrategy] = useState<"skip" | "update">("skip");
   const [notice, setNotice] = useState("");
+  const [dragActive, setDragActive] = useState(false);
   const jobs = useQuery({
     queryKey: ["import-jobs"],
     queryFn: () => api<ImportJob[]>("/api/imports"),
@@ -70,20 +71,35 @@ export function ImportsPage() {
     },
     onError: (error) => setNotice(error instanceof Error ? error.message : "提交导入失败")
   });
+  const handleFile = (file: File | null | undefined) => {
+    if (file instanceof File && file.size) upload.mutate(file);
+  };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const file = new FormData(event.currentTarget).get("file");
-    if (file instanceof File && file.size) upload.mutate(file);
+    handleFile(new FormData(event.currentTarget).get("file") as File | null);
+  };
+  const onDragOver = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setDragActive(true);
+  };
+  const onDragLeave = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (event.currentTarget === event.target) setDragActive(false);
+  };
+  const onDrop = (event: DragEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setDragActive(false);
+    handleFile(event.dataTransfer.files?.[0]);
   };
 
   return <section>
     <header className="page-head"><div><h1>导入记录</h1><p>批量导入 Excel、XLS 或 CSV，并追踪后台处理结果</p></div><a className="button" href="/api/imports/template?format=xlsx"><Download size={16}/>下载模板</a></header>
     {notice && <div className="notice-static">{notice}</div>}
     <div className="import-grid">
-      <form className="upload-card" onSubmit={submit}>
+      <form className={`upload-card ${dragActive?"upload-card-active":""}`} onSubmit={submit} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
         <div className="upload-icon"><UploadCloud size={28}/></div>
         <h2>上传账号文件</h2>
-        <p>文件最大 10 MB。OP卡密只在服务端加密暂存，预览不显示明文。</p>
+        <p>文件最大 10 MB。OP卡密只在服务端加密暂存，预览不显示明文。支持把文件直接拖到这里。</p>
         <label className="file-picker"><input name="file" type="file" accept=".xlsx,.xls,.csv" required/><span>选择文件</span></label>
         <button className="primary" disabled={upload.isPending}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
       </form>

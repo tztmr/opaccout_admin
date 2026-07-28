@@ -39,7 +39,7 @@ const EncryptedValueSchema = new Schema<EncryptedValue>(
 const AccountSchema = new Schema<AccountRecord>(
   {
     douyinId: { type: String, required: true, trim: true },
-    secUid: { type: String, required: true, trim: true },
+    secUid: { type: String, required: false, trim: true, default: "" },
     registeredAt: { type: Date, required: true },
     opName: { type: String, default: "", trim: true, maxlength: 100 },
     opSecret: { type: EncryptedValueSchema, required: true },
@@ -55,7 +55,11 @@ const AccountSchema = new Schema<AccountRecord>(
 );
 
 AccountSchema.index({ douyinId: 1 }, { unique: true });
-AccountSchema.index({ secUid: 1 }, { unique: true });
+// Empty sec_uid is allowed when detection fails; only non-empty values stay unique.
+AccountSchema.index(
+  { secUid: 1 },
+  { unique: true, partialFilterExpression: { secUid: { $gt: "" } } }
+);
 AccountSchema.index({ saleStatus: 1 });
 AccountSchema.index({ accountStatus: 1 });
 AccountSchema.index({ registeredAt: 1 });

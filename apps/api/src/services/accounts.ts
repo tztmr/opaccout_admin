@@ -15,7 +15,11 @@ import type { SecretCipher } from "./encryption";
 import type { DouyinCheckResult } from "./douyin-check";
 import { calculateOpExpiry } from "./op-expiry";
 import type { OpProfileCheckResult } from "./op-profile";
-import { applyOpProfileResult } from "./op-profile-policy";
+import {
+  applyOpProfileResult,
+  resolveAccountStatus
+} from "./op-profile-policy";
+import { DouyinCheckError } from "./douyin-check";
 import {
   assertBannedSaleStatusChange,
   resolveDetectedSaleStatus
@@ -52,6 +56,16 @@ type AccountListResult = PagedResponse<AccountDto> & { stats: AccountStats };
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildKeywordSearchRegex(keyword: string): RegExp | undefined {
+  const terms = keyword
+    .split(/\r?\n+/)
+    .map((value) => value.trim().toLocaleLowerCase("zh-CN"))
+    .filter(Boolean);
+  if (!terms.length) return undefined;
+  if (terms.length === 1) return new RegExp(escapeRegex(terms[0]!), "i");
+  return new RegExp(terms.map((term) => escapeRegex(term)).join("|"), "i");
 }
 
 function toDto(value: AccountRecord & { _id: unknown }): AccountDto {
@@ -95,6 +109,25 @@ function duplicateError(error: unknown): AppError | undefined {
   );
 }
 
+
+async function detectDouyinStatus(
+  checkDouyinId: AccountServiceDependencies["checkDouyinId"],
+  douyinId: string
+) {
+  try {
+    return await checkDouyinId(douyinId);
+  } catch (error) {
+    if (error instanceof DouyinCheckError) {
+      return {
+        secUid: "",
+        accountStatus: "unknown" as const,
+        checkedAt: new Date()
+      };
+    }
+    throw error;
+  }
+}
+
 export function createAccountsService({
   model = AccountModel,
   checkDouyinId,
@@ -129,19 +162,20 @@ export function createAccountsService({
     async create(rawInput: unknown, context: AuditContext): Promise<AccountDto> {
       const input = AccountInputSchema.parse(rawInput);
       const [detected, opResult] = await Promise.all([
-        checkDouyinId(input.douyinId),
+        detectDouyinStatus(checkDouyinId, input.douyinId),
         checkOpProfile(input.opSecret)
       ]);
       const prepared = applyOpProfileResult(input, opResult);
+      const accountStatus = resolveAccountStatus(detected.accountStatus, opResult);
       try {
         const created = await model.create({
           ...prepared,
           registeredAt: new Date(`${prepared.registeredAt}T00:00:00.000Z`),
           secUid: detected.secUid,
-          accountStatus: detected.accountStatus,
+          accountStatus,
           accountCheckedAt: detected.checkedAt,
           saleStatus: resolveDetectedSaleStatus(
-            detected.accountStatus,
+            accountStatus,
             prepared.saleStatus
           ),
           opSecret: cipher.encrypt(prepared.opSecret),
@@ -169,7 +203,10 @@ export function createAccountsService({
     async list(rawQuery: unknown): Promise<AccountListResult> {
       const query = AccountListQuerySchema.parse(rawQuery);
       const filter: Record<string, unknown> = {};
-      if (query.keyword) filter.searchText = new RegExp(escapeRegex(query.keyword.toLocaleLowerCase("zh-CN")), "i");
+      const keywordRegex = query.keyword
+        ? buildKeywordSearchRegex(query.keyword)
+        : undefined;
+      if (keywordRegex) filter.searchText = keywordRegex;
       if (query.saleStatus) filter.saleStatus = query.saleStatus;
       if (query.accountStatus) filter.accountStatus = query.accountStatus;
       if (query.owner) filter.owner = query.owner;
@@ -179,22 +216,42 @@ export function createAccountsService({
           ...(query.registeredTo ? { $lte: new Date(`${query.registeredTo}T23:59:59.999Z`) } : {})
         };
       }
-      const skip = (query.page - 1) * query.pageSize;
+      const pageSize = query.pageSize;
+      const isAllPageSize = pageSize === "all";
+      const resolvedPageSize: 20 | 50 | 100 | null = isAllPageSize
+        ? null
+        : pageSize;
+      const page = isAllPageSize ? 1 : query.page;
+      const skip = resolvedPageSize == null ? 0 : (page - 1) * resolvedPageSize;
+      const sortValue = query.sortDirection === "desc" ? -1 : 1;
+      let findQuery = model
+        .find(filter)
+        .sort({ registeredAt: sortValue, _id: sortValue })
+        .skip(skip);
+      if (resolvedPageSize != null) {
+        findQuery = findQuery.limit(resolvedPageSize);
+      }
       const [items, total, statusCounts] = await Promise.all([
-        model.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(query.pageSize).lean(),
+        findQuery.lean(),
         model.countDocuments(filter),
         model.aggregate<{ _id: string; count: number }>([
           { $group: { _id: "$saleStatus", count: { $sum: 1 } } }
         ])
       ]);
       const statusMap = Object.fromEntries(statusCounts.map((item) => [item._id, item.count]));
-      const abnormal = await model.countDocuments({ accountStatus: { $in: ["violation", "banned"] } });
+      const abnormal = await model.countDocuments({ accountStatus: { $in: ["violation", "banned", "op_invalid"] } });
+      const responsePageSize: 20 | 50 | 100 | "all" =
+        resolvedPageSize == null ? "all" : resolvedPageSize;
+      const totalPages =
+        resolvedPageSize == null
+          ? 1
+          : Math.max(1, Math.ceil(total / resolvedPageSize));
       return {
         items: items.map((item) => toDto(item as AccountRecord & { _id: unknown })),
-        page: query.page,
-        pageSize: query.pageSize,
+        page,
+        pageSize: responsePageSize,
         total,
-        totalPages: Math.ceil(total / query.pageSize),
+        totalPages,
         stats: {
           total: Object.values(statusMap).reduce((sum, count) => sum + count, 0),
           unsold: statusMap.unsold ?? 0,
@@ -220,7 +277,7 @@ export function createAccountsService({
       assertBannedSaleStatusChange(account.accountStatus, patch.saleStatus);
 
       if (patch.douyinId && patch.douyinId !== account.douyinId) {
-        const detected = await checkDouyinId(patch.douyinId);
+        const detected = await detectDouyinStatus(checkDouyinId, patch.douyinId);
         account.secUid = detected.secUid;
         account.accountStatus = detected.accountStatus;
         account.accountCheckedAt = detected.checkedAt;
@@ -257,6 +314,53 @@ export function createAccountsService({
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
       await writeAudit("account.secret_revealed", [id], ["opSecret"], context);
       return { opSecret: cipher.decrypt(account.opSecret) };
+    },
+
+    async recheckOp(id: string, context: AuditContext): Promise<AccountDto> {
+      const account = await model.findById(id);
+      if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
+
+      const opSecret = cipher.decrypt(account.opSecret);
+      const opResult = await checkOpProfile(opSecret);
+      const prepared = applyOpProfileResult({
+        douyinId: account.douyinId,
+        registeredAt: account.registeredAt.toISOString().slice(0, 10),
+        opName: account.opName,
+        opSecret,
+        owner: account.owner,
+        saleStatus: account.saleStatus,
+        remark: account.remark
+      }, opResult);
+
+      let baseAccountStatus = account.accountStatus;
+      const changedFields = new Set(["opName", "remark", "saleStatus", "accountStatus"]);
+
+      // OP检测成功后，若此前因 token 失效被标记为 op_invalid，需要恢复真实抖音状态。
+      if (account.accountStatus === "op_invalid" && opResult.kind !== "message") {
+        const detected = await detectDouyinStatus(checkDouyinId, account.douyinId);
+        account.secUid = detected.secUid || account.secUid;
+        account.accountCheckedAt = detected.checkedAt;
+        baseAccountStatus = detected.accountStatus;
+        changedFields.add("secUid");
+        changedFields.add("accountCheckedAt");
+      }
+
+      account.opName = prepared.opName;
+      account.remark = prepared.remark;
+      account.accountStatus = resolveAccountStatus(baseAccountStatus, opResult);
+      account.saleStatus = resolveDetectedSaleStatus(
+        account.accountStatus,
+        prepared.saleStatus
+      );
+
+      await account.save();
+      await writeAudit(
+        "account.op_rechecked",
+        [id],
+        [...changedFields],
+        context
+      );
+      return toDto(account);
     },
 
     async remove(id: string, context: AuditContext): Promise<void> {
@@ -305,12 +409,15 @@ export function createAccountsService({
     async recheck(id: string, context: AuditContext): Promise<AccountDto> {
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
-      const detected = await checkDouyinId(account.douyinId);
-      account.secUid = detected.secUid;
-      account.accountStatus = detected.accountStatus;
+      const detected = await detectDouyinStatus(checkDouyinId, account.douyinId);
+      account.secUid = detected.secUid || account.secUid;
+      // recheck only refreshes Douyin-derived status; keep OP失效 until OP is revalidated on create/import
+      if (account.accountStatus !== "op_invalid") {
+        account.accountStatus = detected.accountStatus;
+      }
       account.accountCheckedAt = detected.checkedAt;
       account.saleStatus = resolveDetectedSaleStatus(
-        detected.accountStatus,
+        account.accountStatus,
         account.saleStatus
       );
       await account.save();
@@ -338,6 +445,29 @@ export function createAccountsService({
           else failed.push({
             id,
             code: result.reason instanceof Error ? result.reason.message : "RECHECK_FAILED"
+          });
+        });
+      }
+      return { succeeded, failed };
+    },
+
+    async batchRecheckOp(ids: string[], context: AuditContext) {
+      if (!ids.length || ids.length > 500) {
+        throw new AppError(400, "BATCH_IDS_INVALID", "请选择 1 至 500 条数据");
+      }
+      const succeeded: AccountDto[] = [];
+      const failed: Array<{ id: string; code: string }> = [];
+      for (let index = 0; index < ids.length; index += 5) {
+        const chunk = ids.slice(index, index + 5);
+        const results = await Promise.allSettled(
+          chunk.map((id) => this.recheckOp(id, context))
+        );
+        results.forEach((result, resultIndex) => {
+          const id = chunk[resultIndex] ?? "";
+          if (result.status === "fulfilled") succeeded.push(result.value);
+          else failed.push({
+            id,
+            code: result.reason instanceof Error ? result.reason.message : "RECHECK_OP_FAILED"
           });
         });
       }

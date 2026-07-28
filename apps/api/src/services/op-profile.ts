@@ -38,12 +38,16 @@ export function createOpProfileChecker({
   baseUrl,
   appId,
   fetchImpl = fetch,
-  timeoutMs = 5_000
+  timeoutMs = 5_000,
+  maxAttempts = 2,
+  retryDelayMs = 300
 }: {
   baseUrl: URL;
   appId: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  maxAttempts?: number;
+  retryDelayMs?: number;
 }) {
   return async function checkOpProfile(
     opSecret: string
@@ -56,16 +60,27 @@ export function createOpProfileChecker({
     requestUrl.searchParams.set("oauth_consumer_key", appId);
     requestUrl.searchParams.set("openid", openid);
 
-    try {
-      const response = await fetchImpl(requestUrl, {
-        method: "GET",
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(timeoutMs)
-      });
-      if (!response.ok) return { kind: "unavailable" };
-      return parseOpProfileResponse(await response.json());
-    } catch {
-      return { kind: "unavailable" };
+    const attempts = Math.max(1, maxAttempts);
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const response = await fetchImpl(requestUrl, {
+          method: "GET",
+          headers: { accept: "application/json" },
+          signal: AbortSignal.timeout(timeoutMs)
+        });
+        if (!response.ok) {
+          if (attempt === attempts - 1) return { kind: "unavailable" };
+        } else {
+          return parseOpProfileResponse(await response.json());
+        }
+      } catch {
+        if (attempt === attempts - 1) return { kind: "unavailable" };
+      }
+
+      if (retryDelayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+      }
     }
+    return { kind: "unavailable" };
   };
 }

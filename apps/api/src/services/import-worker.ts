@@ -65,6 +65,29 @@ async function wait(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isRetryableImportError(error: unknown): boolean {
+  return error instanceof DouyinCheckError && error.retryable;
+}
+
+async function runImportAttempt<T>(action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    if (!isRetryableImportError(error)) throw error;
+  }
+  return action();
+}
+
+async function ensureImportedOpName(
+  accounts: AccountsService,
+  id: string,
+  opName: string,
+  context: AuditContext
+): Promise<void> {
+  if (opName.trim()) return;
+  await accounts.update(id, { opName: "-未知-" }, context);
+}
+
 export async function processImportRow(
   accounts: AccountsService,
   input: AccountInput,
@@ -78,10 +101,15 @@ export async function processImportRow(
   const existing = await findExisting(input.douyinId);
   if (existing && duplicateStrategy === "skip") return "skipped";
   if (existing) {
-    await accounts.update(String(existing._id), input, context);
+    const id = String(existing._id);
+    await runImportAttempt(() => accounts.update(id, input, context));
+    await runImportAttempt(() => accounts.recheck(id, context));
+    const opChecked = await accounts.recheckOp(id, context);
+    await ensureImportedOpName(accounts, id, opChecked.opName, context);
     return "updated";
   }
-  await accounts.create(input, context);
+  const created = await runImportAttempt(() => accounts.create(input, context));
+  await ensureImportedOpName(accounts, created._id, created.opName, context);
   return "created";
 }
 

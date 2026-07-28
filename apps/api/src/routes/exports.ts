@@ -12,6 +12,20 @@ function queryString(
   return typeof query[key] === "string" ? query[key] : undefined;
 }
 
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildKeywordRegex(keyword: string): RegExp | undefined {
+  const terms = keyword
+    .split(/\r?\n+/)
+    .map((value) => value.trim().toLocaleLowerCase("zh-CN"))
+    .filter(Boolean);
+  if (!terms.length) return undefined;
+  if (terms.length === 1) return new RegExp(escapeRegex(terms[0]!), "i");
+  return new RegExp(terms.map((term) => escapeRegex(term)).join("|"), "i");
+}
+
 export function buildExportFilter(query: unknown): Record<string, unknown> {
   const source =
     typeof query === "object" && query !== null
@@ -27,10 +41,8 @@ export function buildExportFilter(query: unknown): Record<string, unknown> {
   });
   const filter: Record<string, unknown> = {};
   if (listQuery.keyword) {
-    const escaped = listQuery.keyword
-      .toLocaleLowerCase("zh-CN")
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    filter.searchText = new RegExp(escaped, "i");
+    const regex = buildKeywordRegex(listQuery.keyword);
+    if (regex) filter.searchText = regex;
   }
   if (listQuery.saleStatus) filter.saleStatus = listQuery.saleStatus;
   if (listQuery.accountStatus) filter.accountStatus = listQuery.accountStatus;
@@ -57,10 +69,13 @@ export function createExportsRouter(cipher: SecretCipher, audit: { write(event: 
     try {
       const format = req.query.format === "csv" ? "csv" : "xlsx";
       const ids = typeof req.query.ids === "string" ? req.query.ids.split(",").filter(Boolean) : [];
+      const sortDirection = req.query.sortDirection === "desc" ? -1 : 1;
       const filter: Record<string, unknown> = ids.length
         ? { _id: { $in: ids } }
         : buildExportFilter(req.query);
-      const accounts = await AccountModel.find(filter).sort({ createdAt: -1 }).lean();
+      const accounts = await AccountModel.find(filter)
+        .sort({ registeredAt: sortDirection, _id: sortDirection })
+        .lean();
       const context: AuditContext = {
         ip: req.ip ?? "", userAgent: req.get("user-agent") ?? "",
         requestId: String(res.locals.requestId ?? "")

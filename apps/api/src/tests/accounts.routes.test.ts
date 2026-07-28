@@ -85,4 +85,85 @@ describe("account routes", () => {
     expect(owners).toHaveBeenCalledOnce();
     expect(get).not.toHaveBeenCalled();
   });
+
+  it("forwards an OP recheck request after login", async () => {
+    const recheckOp = vi.fn(async () => ({ _id: "account-id", opName: "API昵称" }));
+    const accountService = {
+      create: vi.fn(),
+      list: vi.fn(),
+      owners: vi.fn(),
+      check: vi.fn(),
+      get: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+      batchRemove: vi.fn(),
+      reveal: vi.fn(),
+      batchUpdate: vi.fn(),
+      recheck: vi.fn(),
+      recheckOp,
+      batchRecheck: vi.fn()
+    } as unknown as AccountsService;
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const agent = new request.agent(
+      createApp({ config: testConfig, adminAuth, accountService })
+    );
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const response = await agent.post("/api/accounts/account-id/recheck-op");
+
+    expect(response.status).toBe(200);
+    expect(recheckOp).toHaveBeenCalledOnce();
+    expect(recheckOp).toHaveBeenCalledWith(
+      "account-id",
+      expect.objectContaining({ requestId: expect.any(String) })
+    );
+  });
+
+  it("forwards a batch OP recheck request after login", async () => {
+    const batchRecheckOp = vi.fn(async () => ({ succeeded: [], failed: [] }));
+    const accountService = {
+      create: vi.fn(),
+      list: vi.fn(),
+      owners: vi.fn(),
+      check: vi.fn(),
+      get: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+      batchRemove: vi.fn(),
+      reveal: vi.fn(),
+      batchUpdate: vi.fn(),
+      recheck: vi.fn(),
+      recheckOp: vi.fn(),
+      batchRecheck: vi.fn(),
+      batchRecheckOp
+    } as unknown as AccountsService;
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const agent = new request.agent(
+      createApp({ config: testConfig, adminAuth, accountService })
+    );
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const response = await agent
+      .post("/api/accounts/batch-recheck-op")
+      .send({ ids: ["a", "b"] });
+
+    expect(response.status).toBe(200);
+    expect(batchRecheckOp).toHaveBeenCalledOnce();
+    expect(batchRecheckOp).toHaveBeenCalledWith(
+      ["a", "b"],
+      expect.objectContaining({ requestId: expect.any(String) })
+    );
+  });
 });

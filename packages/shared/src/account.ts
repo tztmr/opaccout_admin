@@ -7,7 +7,13 @@ export const SALE_STATUSES = [
   "disabled",
   "recovered"
 ] as const;
-export const ACCOUNT_STATUSES = ["normal", "violation", "banned"] as const;
+export const ACCOUNT_STATUSES = [
+  "normal",
+  "violation",
+  "banned",
+  "unknown",
+  "op_invalid"
+] as const;
 
 export const SaleStatusSchema = z.enum(SALE_STATUSES);
 export const AccountStatusSchema = z.enum(ACCOUNT_STATUSES);
@@ -26,7 +32,9 @@ export const SALE_STATUS_LABELS: Record<SaleStatus, string> = {
 export const ACCOUNT_STATUS_LABELS: Record<AccountStatus, string> = {
   normal: "正常",
   violation: "违规",
-  banned: "封禁"
+  banned: "封禁",
+  unknown: "未知",
+  op_invalid: "OP失效"
 };
 
 export const AccountInputSchema = z
@@ -49,11 +57,38 @@ const QueryBooleanSchema = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const SortDirectionSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") return "asc";
+  if (typeof value === "string") return value.trim().toLowerCase();
+  return value;
+}, z.enum(["asc", "desc"]));
+
+export const ACCOUNT_PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
+export const ACCOUNT_PAGE_SIZE_ALL = "all" as const;
+
+const AccountPageSizeSchema = z.preprocess((value) => {
+  if (value === undefined || value === null || value === "") return 20;
+  if (typeof value === "string" && value.trim().toLowerCase() === "all") {
+    return "all";
+  }
+  if (typeof value === "string" && value.trim() !== "") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+  }
+  return value;
+}, z.union([
+  z.literal("all"),
+  z.literal(20),
+  z.literal(50),
+  z.literal(100)
+]));
+
 export const AccountListQuerySchema = z
   .object({
     page: z.coerce.number().int().min(1).default(1),
-    pageSize: z.coerce.number().int().min(1).max(100).default(20),
-    keyword: z.string().trim().max(200).optional(),
+    pageSize: AccountPageSizeSchema.default(20),
+    keyword: z.string().trim().max(5000).optional(),
+    sortDirection: SortDirectionSchema.default("asc"),
     saleStatus: SaleStatusSchema.optional(),
     accountStatus: AccountStatusSchema.optional(),
     owner: z.string().trim().min(1).max(100).optional(),

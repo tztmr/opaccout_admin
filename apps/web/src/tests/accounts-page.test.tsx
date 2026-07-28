@@ -1,0 +1,245 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { AccountsPage } from "../features/AccountsPage";
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+function json(body: unknown) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((nextResolve) => {
+    resolve = nextResolve;
+  });
+  return { promise, resolve };
+}
+
+function renderPage() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
+  });
+
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={["/accounts"]}>
+        <Routes>
+          <Route path="/accounts" element={<AccountsPage />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
+describe("accounts page", () => {
+  it("renders sec_uid as a Douyin profile link and opens a batch status dialog", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+
+    const secUidLink = await screen.findByRole("link", {
+      name: /MS4wLjABAAAA-fixture/
+    });
+    expect(secUidLink).toHaveAttribute(
+      "href",
+      "https://www.douyin.com/user/MS4wLjABAAAA-fixture"
+    );
+    expect(secUidLink).toHaveAttribute("target", "_blank");
+
+    await user.click(
+      screen.getByRole("checkbox", { name: "选择账号 94946893573" })
+    );
+    await user.click(screen.getByRole("button", { name: "修改售卖状态" }));
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "售卖状态" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确定" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
+  });
+
+  it("submits multiline keyword searches through the account query", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [],
+          page: 1,
+          pageSize: 20,
+          total: 0,
+          totalPages: 1,
+          stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const searchBox = await screen.findByPlaceholderText(/一行一个/);
+    await user.type(searchBox, "94946893573{enter}93180119509");
+    await new Promise((resolve) => setTimeout(resolve, 380));
+
+    const requestedUrls = fetchMock.mock.calls.map((call) => String(call[0]));
+    expect(
+      requestedUrls.some((url) =>
+        url.includes("/api/accounts?") &&
+        url.includes("sortDirection=asc") &&
+        url.includes("keyword=94946893573%0A93180119509")
+      )
+    ).toBe(true);
+  }, 10000);
+
+  it("shows a progress bar while a single recheck is running", async () => {
+    const recheckRequest = deferred<Response>();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/account-1/recheck") {
+        return recheckRequest.promise;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const button = await screen.findByRole("button", { name: "重新检测" });
+    await user.click(button);
+
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
+
+    recheckRequest.resolve(json({ ok: true }));
+    await waitFor(() => {
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows a progress bar while a batch OP recheck is running", async () => {
+    const batchRequest = deferred<Response>();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck-op") {
+        return batchRequest.promise;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(
+      await screen.findByRole("checkbox", { name: "选择账号 94946893573" })
+    );
+    await user.click(
+      within(screen.getByText(/已选择 1 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测 OP" })
+    );
+
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
+
+    batchRequest.resolve(json({ succeeded: [{ _id: "account-1" }], failed: [] }));
+    await waitFor(() => {
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    });
+  });
+});

@@ -4,6 +4,7 @@ export const DEFAULT_ACCOUNT_SALE_STATUS: SaleStatus = "unknown";
 
 const FILTER_KEYS = [
   "keyword",
+  "sortDirection",
   "saleStatus",
   "accountStatus",
   "owner",
