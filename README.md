@@ -33,6 +33,22 @@
 
 需要 Docker Engine 与 Docker Compose v2。
 
+如果你希望像 `deploy-oplogin.sh` 那样用一个交互式脚本完成拉代码、写 `.env`、启动容器和接入 HTTPS，可以直接使用仓库根目录的：
+
+```bash
+chmod +x ./deploy-opacout-admin.sh
+./deploy-opacout-admin.sh
+```
+
+也支持命令行子命令：
+
+```bash
+./deploy-opacout-admin.sh deploy
+./deploy-opacout-admin.sh status
+./deploy-opacout-admin.sh logs api
+./deploy-opacout-admin.sh https
+```
+
 ```bash
 cp .env.example .env
 ```
