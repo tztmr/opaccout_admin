@@ -173,4 +173,31 @@ describe("parseImport", () => {
     expect(result.errors).toEqual([]);
     expect(result.rows[0]?.registeredAt).toBe("2026-06-16");
   });
+
+  it("accepts 时间 and op名称 header aliases from exported workbooks", () => {
+    const result = parseImport(
+      workbookBuffer([
+        {
+          抖音号: "87032695043",
+          时间: new Date("2026-07-20T17:54:16.999Z"),
+          op名称: "",
+          OP卡密:
+            "2B89B50F61961F25A80FD01267184D52|1A4B810925766705CC41D6ADBF6E5239|4798D098F45B276777E2F30FAE0C6070|8a410b96adf7fa505a7390061e825001|1783103172",
+          归属人: "冒险王",
+          售卖状态: "",
+          备注: ""
+        }
+      ]),
+      "accounts.xlsx"
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows[0]).toMatchObject({
+      douyinId: "87032695043",
+      registeredAt: "2026-07-21",
+      opName: "",
+      owner: "冒险王",
+      saleStatus: "unknown"
+    });
+  });
 });

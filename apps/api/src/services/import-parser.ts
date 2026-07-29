@@ -24,6 +24,16 @@ export type ImportParseResult = {
   totalRows: number;
 };
 
+function pickValue(
+  source: Record<string, unknown>,
+  ...keys: string[]
+): unknown {
+  for (const key of keys) {
+    if (key in source) return source[key];
+  }
+  return "";
+}
+
 function normalizedDate(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return shanghaiDate(value);
@@ -144,8 +154,8 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
     const saleStatusLabel = String(source["售卖状态"] ?? "").trim();
     const candidate = {
       douyinId,
-      registeredAt: normalizedDate(source["注册时间"]),
-      opName: String(source["OP名称"] ?? "").trim(),
+      registeredAt: normalizedDate(pickValue(source, "注册时间", "时间")),
+      opName: String(pickValue(source, "OP名称", "op名称")).trim(),
       opSecret: String(source["OP卡密"] ?? "").trim(),
       owner: String(source["归属人"] ?? "").trim(),
       saleStatus: saleStatusLabel
