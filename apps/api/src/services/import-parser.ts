@@ -151,12 +151,15 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
   sourceRows.forEach((source, index) => {
     const rowNumber = index + 2;
     const douyinId = String(source["抖音号"] ?? "").trim();
+    if (douyinId && seen.has(douyinId)) {
+      return;
+    }
     const saleStatusLabel = String(source["售卖状态"] ?? "").trim();
     const candidate = {
       douyinId,
       registeredAt: normalizedDate(pickValue(source, "注册时间", "时间")),
       opName: String(pickValue(source, "OP名称", "op名称")).trim(),
-      opSecret: String(source["OP卡密"] ?? "").trim(),
+      opSecret: String(pickValue(source, "OP卡密", "op卡密")).trim(),
       owner: String(source["归属人"] ?? "").trim(),
       saleStatus: saleStatusLabel
         ? STATUS_MAP[saleStatusLabel] ?? saleStatusLabel
@@ -185,14 +188,6 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
         });
       }
       rows.push(parsed.data);
-    }
-    if (seen.has(douyinId)) {
-      errors.push({
-        row: rowNumber,
-        field: "douyinId",
-        code: "DOUYIN_ID_DUPLICATE_IN_FILE",
-        message: "文件内抖音号重复"
-      });
     }
     if (douyinId) seen.add(douyinId);
   });

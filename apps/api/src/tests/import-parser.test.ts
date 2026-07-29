@@ -95,7 +95,7 @@ describe("parseImport", () => {
     ]);
   });
 
-  it("reports duplicate IDs and invalid OP timestamps", () => {
+  it("reports invalid OP timestamps", () => {
     const row = {
       抖音号: "94946893573",
       注册时间: "2026-07-27",
@@ -108,8 +108,29 @@ describe("parseImport", () => {
     const result = parseImport(workbookBuffer([row, row]), "accounts.xlsx");
 
     expect(result.errors.map((error) => error.code)).toEqual(
-      expect.arrayContaining(["OP_SECRET_TIMESTAMP_INVALID", "DOUYIN_ID_DUPLICATE_IN_FILE"])
+      expect.arrayContaining(["OP_SECRET_TIMESTAMP_INVALID"])
     );
+  });
+
+  it("deduplicates repeated douyin IDs and keeps one row", () => {
+    const row = {
+      抖音号: "94946893573",
+      注册时间: "2026-07-27",
+      OP名称: "",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      售卖状态: "未售卖",
+      备注: ""
+    };
+    const result = parseImport(workbookBuffer([row, row]), "accounts.xlsx");
+
+    expect(result.errors).toEqual([]);
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      owner: "小王"
+    });
   });
 
   it("normalizes common Chinese and slash datetime registeredAt values", () => {
@@ -181,7 +202,7 @@ describe("parseImport", () => {
           抖音号: "87032695043",
           时间: new Date("2026-07-20T17:54:16.999Z"),
           op名称: "",
-          OP卡密:
+          op卡密:
             "2B89B50F61961F25A80FD01267184D52|1A4B810925766705CC41D6ADBF6E5239|4798D098F45B276777E2F30FAE0C6070|8a410b96adf7fa505a7390061e825001|1783103172",
           归属人: "冒险王",
           售卖状态: "",
