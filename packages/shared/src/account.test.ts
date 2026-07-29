@@ -61,7 +61,23 @@ describe("AccountInputSchema", () => {
     });
 
     expect(value.saleStatus).toBe("unknown");
+    expect(value.registeredRegion).toBe("中国.香港");
     expect(SALE_STATUS_LABELS.unknown).toBe("未知");
+  });
+
+  it("defaults blank registeredRegion to 中国.香港", () => {
+    const value = AccountInputSchema.parse({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-28",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      registeredRegion: "  ",
+      saleStatus: "unknown",
+      remark: ""
+    });
+
+    expect(value.registeredRegion).toBe("中国.香港");
   });
 
   it("accepts unknown as an explicit input and list filter", () => {

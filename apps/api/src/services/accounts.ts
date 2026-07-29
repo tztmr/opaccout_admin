@@ -5,6 +5,7 @@ import {
   type AccountInput,
   type AccountListQuery,
   type AccountStats,
+  DEFAULT_REGISTERED_REGION,
   type PagedResponse,
   type SaleStatus
 } from "@douyin-admin/shared";
@@ -88,6 +89,7 @@ function toDto(value: AccountRecord & { _id: unknown }): AccountDto {
     hasOpSecret: true,
     opExpiresAt: value.opExpiresAt.toISOString(),
     owner: value.owner,
+    registeredRegion: value.registeredRegion || DEFAULT_REGISTERED_REGION,
     saleStatus: value.saleStatus,
     accountStatus: value.accountStatus,
     accountCheckedAt: value.accountCheckedAt.toISOString(),
@@ -244,21 +246,24 @@ export function createAccountsService({
       if (resolvedPageSize != null) {
         findQuery = findQuery.limit(resolvedPageSize);
       }
-      const [items, total, statusCounts, matchedDouyinIds] = await Promise.all([
-        findQuery.lean(),
-        model.countDocuments(filter),
-        model.aggregate<{ _id: string; count: number }>([
-          { $group: { _id: "$saleStatus", count: { $sum: 1 } } }
-        ]),
-        requestedDouyinIds.length
-          ? model.distinct("douyinId", {
+      const matchedDouyinIdsPromise: Promise<string[]> = requestedDouyinIds.length
+        ? model
+            .distinct("douyinId", {
               ...(filter.registeredAt ? { registeredAt: filter.registeredAt } : {}),
               ...(filter.saleStatus ? { saleStatus: filter.saleStatus } : {}),
               ...(filter.accountStatus ? { accountStatus: filter.accountStatus } : {}),
               ...(filter.owner ? { owner: filter.owner } : {}),
               douyinId: { $in: requestedDouyinIds }
             })
-          : Promise.resolve([])
+            .then((values) => values as string[])
+        : Promise.resolve([]);
+      const [items, total, statusCounts, matchedDouyinIds] = await Promise.all([
+        findQuery.lean(),
+        model.countDocuments(filter),
+        model.aggregate<{ _id: string; count: number }>([
+          { $group: { _id: "$saleStatus", count: { $sum: 1 } } }
+        ]),
+        matchedDouyinIdsPromise
       ]);
       const statusMap = Object.fromEntries(statusCounts.map((item) => [item._id, item.count]));
       const abnormal = await model.countDocuments({ accountStatus: { $in: ["violation", "banned", "op_invalid"] } });
@@ -361,6 +366,7 @@ export function createAccountsService({
         opName: account.opName,
         opSecret,
         owner: account.owner,
+        registeredRegion: account.registeredRegion,
         saleStatus: account.saleStatus,
         remark: account.remark
       }, opResult);
@@ -413,13 +419,16 @@ export function createAccountsService({
 
     async batchUpdate(
       ids: string[],
-      patch: { saleStatus?: SaleStatus; owner?: string },
+      patch: { saleStatus?: SaleStatus; owner?: string; registeredRegion?: string },
       context: AuditContext
     ) {
       if (!ids.length || ids.length > 500) throw new AppError(400, "BATCH_IDS_INVALID", "请选择 1 至 500 条数据");
       const allowedPatch: Record<string, unknown> = {};
       if (patch.saleStatus) allowedPatch.saleStatus = patch.saleStatus;
       if (patch.owner?.trim()) allowedPatch.owner = patch.owner.trim();
+      if (patch.registeredRegion?.trim()) {
+        allowedPatch.registeredRegion = patch.registeredRegion.trim();
+      }
       if (!Object.keys(allowedPatch).length) throw new AppError(400, "BATCH_PATCH_EMPTY", "没有可修改的字段");
       if (patch.saleStatus && patch.saleStatus !== "disabled") {
         const lockedCount = await model.countDocuments({

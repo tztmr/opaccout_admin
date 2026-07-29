@@ -104,15 +104,16 @@ export function ImportsPage() {
     if (!pasteText.trim()) return;
 
     const lines = pasteText.split('\n').map(line => line.trim()).filter(Boolean);
-    const headers = ["抖音号", "注册时间", "OP名称", "OP卡密", "归属人", "售卖状态", "备注"];
+    const headers = ["抖音号", "注册时间", "OP名称", "OP卡密", "归属人", "注册地区", "售卖状态", "备注"];
 
     const escapeCsv = (val: string) => `"${val.replace(/"/g, '""')}"`;
     const csvLines = [headers.map(escapeCsv).join(',')];
 
     for (const line of lines) {
       const parts = line.split('----').map(p => p.trim());
-      while (parts.length < 7) parts.push('');
-      csvLines.push(parts.slice(0, 7).map(escapeCsv).join(','));
+      if (parts.length === 7) parts.splice(5, 0, "");
+      while (parts.length < 8) parts.push('');
+      csvLines.push(parts.slice(0, 8).map(escapeCsv).join(','));
     }
 
     const csvContent = csvLines.join('\n');
@@ -155,14 +156,14 @@ export function ImportsPage() {
           className="paste-input"
           value={pasteText}
           onChange={e => setPasteText(e.target.value)}
-          placeholder="抖音号----注册时间----OP名称----OP卡密----归属人----售卖状态----备注"
+          placeholder="抖音号----注册时间----OP名称----OP卡密----归属人----注册地区----售卖状态----备注"
           required
         />
         <button className="primary" disabled={upload.isPending || !pasteText.trim()}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
       </form>
       <div className="guide-card">
         <FileSpreadsheet size={25}/><h2>表头要求</h2>
-        <p>抖音号、注册时间、OP名称、OP卡密、归属人、售卖状态、备注。</p>
+        <p>抖音号、注册时间、OP名称、OP卡密、归属人、注册地区、售卖状态、备注。</p>
         <p>sec_uid、OP到期时间和账号状态会由系统自动获取或计算，无需导入。</p>
       </div>
     </div>

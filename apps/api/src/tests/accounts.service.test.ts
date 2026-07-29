@@ -21,6 +21,7 @@ function accountDocument(overrides: Record<string, unknown> = {}) {
     },
     opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
     owner: "小王",
+    registeredRegion: "中国.香港",
     saleStatus: "unknown" as const,
     accountStatus: "normal" as const,
     accountCheckedAt: new Date("2026-07-27T00:00:00.000Z"),
@@ -101,6 +102,7 @@ describe("accounts service", () => {
       opName: "",
       opSecret: "a|b|1782303418",
       owner: "小王",
+      registeredRegion: "中国.澳门",
       saleStatus: "unsold",
       remark: ""
     }, context);
@@ -109,11 +111,13 @@ describe("accounts service", () => {
     expect(checkOpProfile).toHaveBeenCalledWith("a|b|1782303418");
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       secUid: "MS4wLjABAAAA-fixture",
+      registeredRegion: "中国.澳门",
       accountStatus: "normal",
       opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
       opSecret: expect.objectContaining({ ciphertext: "Y2lwaGVy" })
     }));
     expect(result).not.toHaveProperty("opSecret");
+    expect(result.registeredRegion).toBe("中国.澳门");
     expect(auditWrite).toHaveBeenCalledOnce();
   });
 
@@ -486,6 +490,26 @@ describe("accounts service", () => {
     expect(updateMany).toHaveBeenCalledWith(
       { _id: { $in: ["507f1f77bcf86cd799439011"] } },
       { $set: { owner: "张三" } }
+    );
+  });
+
+  it("allows batch updates for registeredRegion", async () => {
+    const countDocuments = vi.fn();
+    const updateMany = vi.fn(async () => ({ modifiedCount: 2 }));
+    const service = createAccountsService(dependencies({ countDocuments, updateMany }));
+
+    await expect(
+      service.batchUpdate(
+        ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"],
+        { registeredRegion: " 中国.台湾 " },
+        context
+      )
+    ).resolves.toEqual({ updated: 2 });
+
+    expect(countDocuments).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledWith(
+      { _id: { $in: ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"] } },
+      { $set: { registeredRegion: "中国.台湾" } }
     );
   });
 

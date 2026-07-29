@@ -14,6 +14,7 @@ export const ACCOUNT_STATUSES = [
   "unknown",
   "op_invalid"
 ] as const;
+export const DEFAULT_REGISTERED_REGION = "中国.香港";
 
 export const SaleStatusSchema = z.enum(SALE_STATUSES);
 export const AccountStatusSchema = z.enum(ACCOUNT_STATUSES);
@@ -44,6 +45,11 @@ export const AccountInputSchema = z
     opName: z.string().trim().max(100).default(""),
     opSecret: z.string().min(1, "OP卡密不能为空").max(4096),
     owner: z.string().trim().min(1, "归属人不能为空").max(100),
+    registeredRegion: z.preprocess((value) => {
+      if (typeof value !== "string") return value;
+      const normalized = value.trim();
+      return normalized ? normalized : undefined;
+    }, z.string().trim().max(100).default(DEFAULT_REGISTERED_REGION)),
     saleStatus: SaleStatusSchema.default("unknown"),
     remark: z.string().trim().max(1000).default("")
   })
@@ -109,6 +115,7 @@ export type AccountDto = {
   hasOpSecret: true;
   opExpiresAt: string;
   owner: string;
+  registeredRegion: string;
   saleStatus: SaleStatus;
   accountStatus: AccountStatus;
   accountCheckedAt: string;

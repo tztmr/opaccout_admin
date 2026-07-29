@@ -11,6 +11,7 @@ const input: AccountInput = {
   opName: "导入名称",
   opSecret: "openid|token|pay|pfkey|1782303418",
   owner: "小王",
+  registeredRegion: "中国.香港",
   saleStatus: "unknown",
   remark: "原备注"
 };

@@ -16,6 +16,7 @@ export function exportAccounts(
     OP卡密: cipher.decrypt(account.opSecret),
     OP到期时间: account.opExpiresAt.toISOString(),
     归属人: account.owner,
+    注册地区: account.registeredRegion,
     售卖状态: SALE_STATUS_LABELS[account.saleStatus],
     账号状态: ACCOUNT_STATUS_LABELS[account.accountStatus],
     备注: account.remark
@@ -29,7 +30,7 @@ export function exportAccounts(
 
 export function exportTemplate(format: "xlsx" | "csv"): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet([[
-    "抖音号", "注册时间", "OP名称", "OP卡密", "归属人", "售卖状态", "备注"
+    "抖音号", "注册时间", "OP名称", "OP卡密", "归属人", "注册地区", "售卖状态", "备注"
   ]]);
   if (format === "csv") return Buffer.from(XLSX.utils.sheet_to_csv(sheet), "utf8");
   const workbook = XLSX.utils.book_new();

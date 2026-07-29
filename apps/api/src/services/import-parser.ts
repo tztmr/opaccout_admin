@@ -1,4 +1,9 @@
-import { AccountInputSchema, type AccountInput, type SaleStatus } from "@douyin-admin/shared";
+import {
+  AccountInputSchema,
+  DEFAULT_REGISTERED_REGION,
+  type AccountInput,
+  type SaleStatus
+} from "@douyin-admin/shared";
 import * as XLSX from "xlsx";
 import { calculateOpExpiry } from "./op-expiry";
 
@@ -161,6 +166,7 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
       opName: String(pickValue(source, "OP名称", "op名称")).trim(),
       opSecret: String(pickValue(source, "OP卡密", "op卡密")).trim(),
       owner: String(source["归属人"] ?? "").trim(),
+      registeredRegion: String(source["注册地区"] ?? "").trim() || DEFAULT_REGISTERED_REGION,
       saleStatus: saleStatusLabel
         ? STATUS_MAP[saleStatusLabel] ?? saleStatusLabel
         : undefined,

@@ -15,6 +15,7 @@ export type AccountRecord = {
   opSecret: EncryptedValue;
   opExpiresAt: Date;
   owner: string;
+  registeredRegion: string;
   saleStatus: SaleStatus;
   accountStatus: AccountStatus;
   accountCheckedAt: Date;
@@ -45,6 +46,13 @@ const AccountSchema = new Schema<AccountRecord>(
     opSecret: { type: EncryptedValueSchema, required: true },
     opExpiresAt: { type: Date, required: true },
     owner: { type: String, required: true, trim: true, maxlength: 100 },
+    registeredRegion: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 100,
+      default: "中国.香港"
+    },
     saleStatus: { type: String, required: true, enum: SALE_STATUSES },
     accountStatus: { type: String, required: true, enum: ACCOUNT_STATUSES },
     accountCheckedAt: { type: Date, required: true },
@@ -72,6 +80,7 @@ AccountSchema.pre("validate", function buildSearchText() {
     this.secUid,
     this.opName,
     this.owner,
+    this.registeredRegion,
     this.remark
   ]
     .join(" ")

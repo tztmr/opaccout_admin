@@ -58,6 +58,7 @@ describe("accounts page", () => {
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
+              registeredRegion: "中国.香港",
               saleStatus: "unknown",
               accountStatus: "normal",
               accountCheckedAt: "2026-07-01T00:00:00.000Z",
@@ -203,6 +204,7 @@ describe("accounts page", () => {
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
+              registeredRegion: "中国.香港",
               saleStatus: "unknown",
               accountStatus: "normal",
               accountCheckedAt: "2026-07-01T00:00:00.000Z",
@@ -255,6 +257,7 @@ describe("accounts page", () => {
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
+              registeredRegion: "中国.香港",
               saleStatus: "unknown",
               accountStatus: "normal",
               accountCheckedAt: "2026-07-01T00:00:00.000Z",
@@ -307,6 +310,7 @@ describe("accounts page", () => {
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
+              registeredRegion: "中国.香港",
               saleStatus: "unknown",
               accountStatus: "normal",
               accountCheckedAt: "2026-07-01T00:00:00.000Z",
@@ -344,6 +348,69 @@ describe("accounts page", () => {
     batchRequest.resolve(json({ succeeded: [{ _id: "account-1" }], failed: [] }));
     await waitFor(() => {
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows 注册地区 and submits a batch registeredRegion update", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-update") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({
+          ids: ["account-1"],
+          registeredRegion: "中国.澳门"
+        });
+        return json({ updated: 1 });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+
+    expect(await screen.findByText("中国.香港")).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("checkbox", { name: "选择账号 94946893573" })
+    );
+    await user.click(screen.getByRole("button", { name: "修改注册地区" }));
+    await user.type(screen.getByRole("textbox", { name: "注册地区" }), "中国.澳门");
+    await user.click(screen.getByRole("button", { name: "确定" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/accounts/batch-update",
+        expect.objectContaining({ method: "POST" })
+      );
     });
   });
 });

@@ -11,8 +11,8 @@ function workbookBuffer(rows: Record<string, unknown>[]): Buffer {
 describe("parseImport", () => {
   it("reads a UTF-8 Chinese CSV without a BOM", () => {
     const csv = [
-      "抖音号,注册时间,OP名称,OP卡密,归属人,售卖状态,备注",
-      "94946893573,2026-07-27,星图运营,a|b|1782303418,小王,未售卖,正常账号"
+      "抖音号,注册时间,OP名称,OP卡密,归属人,注册地区,售卖状态,备注",
+      "94946893573,2026-07-27,星图运营,a|b|1782303418,小王,,未售卖,正常账号"
     ].join("\n");
 
     const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv");
@@ -21,6 +21,7 @@ describe("parseImport", () => {
       douyinId: "94946893573",
       registeredAt: "2026-07-27",
       owner: "小王",
+      registeredRegion: "中国.香港",
       saleStatus: "unsold"
     });
     expect(result.errors).toEqual([]);
@@ -33,6 +34,7 @@ describe("parseImport", () => {
       OP名称: "",
       OP卡密: "a|b|1782303418",
       归属人: "小王",
+      注册地区: "中国.澳门",
       售卖状态: "未售卖",
       备注: ""
     }]), "accounts.xlsx");
@@ -40,8 +42,25 @@ describe("parseImport", () => {
     expect(result.rows[0]).toMatchObject({
       douyinId: "94946893573",
       opName: "",
+      registeredRegion: "中国.澳门",
       saleStatus: "unsold"
     });
+    expect(result.errors).toEqual([]);
+  });
+
+  it("defaults blank 注册地区 cells to 中国.香港", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-28",
+      OP名称: "",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      注册地区: "",
+      售卖状态: "",
+      备注: ""
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.registeredRegion).toBe("中国.香港");
     expect(result.errors).toEqual([]);
   });
 
@@ -205,6 +224,7 @@ describe("parseImport", () => {
           op卡密:
             "2B89B50F61961F25A80FD01267184D52|1A4B810925766705CC41D6ADBF6E5239|4798D098F45B276777E2F30FAE0C6070|8a410b96adf7fa505a7390061e825001|1783103172",
           归属人: "冒险王",
+          注册地区: "",
           售卖状态: "",
           备注: ""
         }
@@ -218,6 +238,7 @@ describe("parseImport", () => {
       registeredAt: "2026-07-21",
       opName: "",
       owner: "冒险王",
+      registeredRegion: "中国.香港",
       saleStatus: "unknown"
     });
   });
