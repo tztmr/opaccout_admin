@@ -13,4 +13,11 @@ export type PagedResponse<T> = {
   pageSize: number | "all";
   total: number;
   totalPages: number;
+  searchSummary?: SearchSummary;
+};
+
+export type SearchSummary = {
+  requested: number;
+  found: number;
+  missingKeywords: string[];
 };

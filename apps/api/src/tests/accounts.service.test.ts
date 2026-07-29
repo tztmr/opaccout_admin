@@ -538,8 +538,9 @@ describe("accounts service", () => {
     const find = vi.fn(() => query);
     const countDocuments = vi.fn(async () => 0);
     const aggregate = vi.fn(async () => []);
+    const distinct = vi.fn(async () => ["94946893573", "93180119509"]);
     const service = createAccountsService(
-      dependencies({ find, countDocuments, aggregate })
+      dependencies({ find, countDocuments, aggregate, distinct })
     );
 
     await service.list({ keyword: "94946893573\n93180119509" });
@@ -550,6 +551,45 @@ describe("accounts service", () => {
     expect((filter.searchText as RegExp).test("94946893573")).toBe(true);
     expect((filter.searchText as RegExp).test("93180119509")).toBe(true);
     expect(query.sort).toHaveBeenCalledWith({ registeredAt: 1, _id: 1 });
+  });
+
+  it("returns missing douyin ids for multiline keyword searches", async () => {
+    const lean = vi.fn(async () => [
+      accountDocument({ douyinId: "94946893573" }),
+      accountDocument({
+        _id: "507f1f77bcf86cd799439012",
+        douyinId: "93180119509"
+      })
+    ]);
+    const query = {
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      lean
+    };
+    query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    const find = vi.fn(() => query);
+    const countDocuments = vi.fn(async () => 2);
+    const aggregate = vi.fn(async () => []);
+    const distinct = vi.fn(async () => ["94946893573", "93180119509"]);
+    const service = createAccountsService(
+      dependencies({ find, countDocuments, aggregate, distinct })
+    );
+
+    const result = await service.list({
+      keyword: "94946893573\n93180119509\n56946848178"
+    });
+
+    expect(distinct).toHaveBeenCalledWith("douyinId", {
+      douyinId: { $in: ["94946893573", "93180119509", "56946848178"] }
+    });
+    expect(result.searchSummary).toEqual({
+      requested: 3,
+      found: 2,
+      missingKeywords: ["56946848178"]
+    });
   });
 
   it("supports descending registered time order", async () => {

@@ -31,6 +31,42 @@ type BatchDialogState =
   | { type: "status"; value: AccountFormValue["saleStatus"] }
   | { type: "owner"; value: string };
 
+const URL_KEYWORD_MAX_LENGTH = 1500;
+
+function buildAccountListPayload({
+  keyword,
+  page,
+  pageSize,
+  saleStatus,
+  accountStatus,
+  owner,
+  registeredFrom,
+  registeredTo,
+  sortDirection
+}: {
+  keyword: string;
+  page: number;
+  pageSize: number | typeof ACCOUNT_PAGE_SIZE_ALL;
+  saleStatus: string;
+  accountStatus: string;
+  owner: string;
+  registeredFrom: string;
+  registeredTo: string;
+  sortDirection: "asc" | "desc";
+}) {
+  return {
+    ...(keyword ? { keyword } : {}),
+    ...(saleStatus ? { saleStatus } : {}),
+    ...(accountStatus ? { accountStatus } : {}),
+    ...(owner ? { owner } : {}),
+    ...(registeredFrom ? { registeredFrom } : {}),
+    ...(registeredTo ? { registeredTo } : {}),
+    page,
+    pageSize,
+    sortDirection
+  };
+}
+
 export function AccountsPage() {
   const client = useQueryClient();
   const [urlParams, setUrlParams] = useSearchParams();
@@ -53,16 +89,51 @@ export function AccountsPage() {
   const owner = urlParams.get("owner")||"";
   const registeredFrom = urlParams.get("registeredFrom")||"";
   const registeredTo = urlParams.get("registeredTo")||"";
-  const search = urlParams.get("keyword")||"";
+  const trimmedKeyword = keyword.trim();
+  const search = trimmedKeyword || urlParams.get("keyword")||"";
   const sortDirection = urlParams.get("sortDirection")==="desc" ? "desc" : "asc";
   const updateParams=(patch:Record<string,string>)=>setUrlParams((current)=>{const next=new URLSearchParams(current);for(const [key,value] of Object.entries(patch)){if(value)next.set(key,value);else next.delete(key)}return next},{replace:true});
-  useEffect(() => { const timer=setTimeout(()=>updateParams({keyword,page:""}),300); return()=>clearTimeout(timer); },[keyword]);
+  useEffect(() => {
+    const timer=setTimeout(()=>{
+      updateParams({
+        keyword: trimmedKeyword.length > URL_KEYWORD_MAX_LENGTH ? "" : trimmedKeyword,
+        page:""
+      });
+    },300);
+    return()=>clearTimeout(timer);
+  },[trimmedKeyword]);
   useEffect(()=>setSelected(new Set()),[urlParams.toString()]);
+  const effectivePage = pageSize === ACCOUNT_PAGE_SIZE_ALL ? 1 : page;
+  const listPayload = buildAccountListPayload({
+    keyword: trimmedKeyword,
+    page: effectivePage,
+    pageSize,
+    saleStatus,
+    accountStatus,
+    owner,
+    registeredFrom,
+    registeredTo,
+    sortDirection
+  });
   const params = new URLSearchParams(urlParams);
-  params.set("page", pageSize === ACCOUNT_PAGE_SIZE_ALL ? "1" : String(page));
+  if (trimmedKeyword && trimmedKeyword.length <= URL_KEYWORD_MAX_LENGTH) {
+    params.set("keyword", trimmedKeyword);
+  } else {
+    params.delete("keyword");
+  }
+  params.set("page", String(effectivePage));
   params.set("pageSize", String(pageSize));
   params.set("sortDirection", sortDirection);
-  const query = useQuery({ queryKey:["accounts",params.toString()], queryFn:()=>api<ListResponse>(`/api/accounts?${params}`) });
+  const usePostQuery = trimmedKeyword.length > URL_KEYWORD_MAX_LENGTH;
+  const query = useQuery({
+    queryKey:["accounts", JSON.stringify(listPayload)],
+    queryFn:()=>usePostQuery
+      ? api<ListResponse>("/api/accounts/query",{
+          method:"POST",
+          body:JSON.stringify(listPayload)
+        })
+      : api<ListResponse>(`/api/accounts?${params}`)
+  });
   const ownersQuery = useQuery({
     queryKey:["account-owners"],
     queryFn:()=>api<{items:string[]}>("/api/accounts/owners")
@@ -113,6 +184,10 @@ export function AccountsPage() {
     void client.invalidateQueries({queryKey:["accounts"]});
   };
   const data=query.data;
+  const searchSummary = data?.searchSummary;
+  const missingSummary = searchSummary && searchSummary.missingKeywords.length
+    ? `未找到 ${searchSummary.missingKeywords.length} 个抖音号：${searchSummary.missingKeywords.join("、")}`
+    : "";
   const currentIds=data?.items.map((item)=>item._id)??[];
   const allChecked=currentIds.length>0&&currentIds.every((id)=>selected.has(id));
   const exportParams=buildAccountExportParams(urlParams,selected);
@@ -123,6 +198,7 @@ export function AccountsPage() {
     </div>
     {recheckBusy&&<div className="progress-notice" aria-live="polite"><div className="progress-copy"><span>{progressText}</span><span className="mono">请稍候…</span></div><div className="progress-track" role="progressbar" aria-label={progressText}><span className="progress-indicator"/></div></div>}
     {message&&<button className="notice" onClick={()=>setMessage("")}>{message}<X size={14}/></button>}
+    {missingSummary&&<div className="notice-static" role="status" title={missingSummary}>{missingSummary}</div>}
     <div className="table-panel">
       <div className="toolbar">
         <label className="search search-multiline"><Search size={17}/><textarea value={keyword} onChange={e=>setKeyword(e.target.value)} placeholder="搜索抖音号 / sec_uid / 归属人，支持一行一个抖音号"/></label>

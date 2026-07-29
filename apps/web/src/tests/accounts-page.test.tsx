@@ -134,6 +134,110 @@ describe("accounts page", () => {
     ).toBe(true);
   }, 10000);
 
+  it("uses a POST query for oversized multiline searches", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: [] });
+      if (path === "/api/accounts/query") {
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBeTruthy();
+        const body = JSON.parse(String(init?.body));
+        expect(body.keyword).toContain("94946893573");
+        expect(body.keyword).toContain("56946848178");
+        expect(body.sortDirection).toBe("asc");
+        expect(body.page).toBe(1);
+        expect(body.pageSize).toBe(20);
+        return json({
+          items: [],
+          page: 1,
+          pageSize: 20,
+          total: 0,
+          totalPages: 1,
+          stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [],
+          page: 1,
+          pageSize: 20,
+          total: 0,
+          totalPages: 1,
+          stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const searchBox = await screen.findByPlaceholderText(/一行一个/);
+    const longKeyword = `${Array.from({ length: 220 }, (_, index) =>
+      String(94946893573 + index)
+    ).join("\n")}\n56946848178`;
+    await user.type(searchBox, longKeyword.replace(/\n/g, "{enter}"));
+    await new Promise((resolve) => setTimeout(resolve, 380));
+
+    expect(
+      fetchMock.mock.calls.some(
+        ([input, init]) =>
+          String(input) === "/api/accounts/query" && init?.method === "POST"
+      )
+    ).toBe(true);
+  }, 10000);
+
+  it("shows missing douyin ids after a multiline search", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 },
+          searchSummary: {
+            requested: 2,
+            found: 1,
+            missingKeywords: ["56946848178"]
+          }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const searchBox = await screen.findByPlaceholderText(/一行一个/);
+    await user.type(searchBox, "94946893573{enter}56946848178");
+    await new Promise((resolve) => setTimeout(resolve, 380));
+
+    expect(
+      await screen.findByText("未找到 1 个抖音号：56946848178")
+    ).toBeInTheDocument();
+  }, 10000);
+
   it("shows a progress bar while a single recheck is running", async () => {
     const recheckRequest = deferred<Response>();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

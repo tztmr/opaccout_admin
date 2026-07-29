@@ -86,6 +86,57 @@ describe("account routes", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("accepts oversized search filters through a POST query endpoint", async () => {
+    const list = vi.fn(async () => ({
+      items: [],
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 1,
+      stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+    }));
+    const accountService = {
+      create: vi.fn(),
+      list,
+      owners: vi.fn(),
+      check: vi.fn(),
+      get: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+      batchRemove: vi.fn(),
+      reveal: vi.fn(),
+      batchUpdate: vi.fn(),
+      recheck: vi.fn(),
+      batchRecheck: vi.fn()
+    } as unknown as AccountsService;
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const agent = new request.agent(
+      createApp({ config: testConfig, adminAuth, accountService })
+    );
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const response = await agent.post("/api/accounts/query").send({
+      keyword: "94946893573\n93180119509",
+      page: 1,
+      pageSize: 20,
+      sortDirection: "asc"
+    });
+
+    expect(response.status).toBe(200);
+    expect(list).toHaveBeenCalledWith({
+      keyword: "94946893573\n93180119509",
+      page: 1,
+      pageSize: 20,
+      sortDirection: "asc"
+    });
+  });
+
   it("forwards an OP recheck request after login", async () => {
     const recheckOp = vi.fn(async () => ({ _id: "account-id", opName: "API昵称" }));
     const accountService = {

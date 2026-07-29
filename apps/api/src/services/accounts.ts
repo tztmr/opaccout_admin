@@ -68,6 +68,16 @@ function buildKeywordSearchRegex(keyword: string): RegExp | undefined {
   return new RegExp(terms.map((term) => escapeRegex(term)).join("|"), "i");
 }
 
+function extractBatchDouyinIds(keyword: string): string[] {
+  const terms = keyword
+    .split(/\r?\n+/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (terms.length < 2) return [];
+  if (!terms.every((term) => /^\d{1,32}$/.test(term))) return [];
+  return [...new Set(terms)];
+}
+
 function toDto(value: AccountRecord & { _id: unknown }): AccountDto {
   return {
     _id: String(value._id),
@@ -203,6 +213,9 @@ export function createAccountsService({
     async list(rawQuery: unknown): Promise<AccountListResult> {
       const query = AccountListQuerySchema.parse(rawQuery);
       const filter: Record<string, unknown> = {};
+      const requestedDouyinIds = query.keyword
+        ? extractBatchDouyinIds(query.keyword)
+        : [];
       const keywordRegex = query.keyword
         ? buildKeywordSearchRegex(query.keyword)
         : undefined;
@@ -231,12 +244,21 @@ export function createAccountsService({
       if (resolvedPageSize != null) {
         findQuery = findQuery.limit(resolvedPageSize);
       }
-      const [items, total, statusCounts] = await Promise.all([
+      const [items, total, statusCounts, matchedDouyinIds] = await Promise.all([
         findQuery.lean(),
         model.countDocuments(filter),
         model.aggregate<{ _id: string; count: number }>([
           { $group: { _id: "$saleStatus", count: { $sum: 1 } } }
-        ])
+        ]),
+        requestedDouyinIds.length
+          ? model.distinct("douyinId", {
+              ...(filter.registeredAt ? { registeredAt: filter.registeredAt } : {}),
+              ...(filter.saleStatus ? { saleStatus: filter.saleStatus } : {}),
+              ...(filter.accountStatus ? { accountStatus: filter.accountStatus } : {}),
+              ...(filter.owner ? { owner: filter.owner } : {}),
+              douyinId: { $in: requestedDouyinIds }
+            })
+          : Promise.resolve([])
       ]);
       const statusMap = Object.fromEntries(statusCounts.map((item) => [item._id, item.count]));
       const abnormal = await model.countDocuments({ accountStatus: { $in: ["violation", "banned", "op_invalid"] } });
@@ -252,6 +274,17 @@ export function createAccountsService({
         pageSize: responsePageSize,
         total,
         totalPages,
+        ...(requestedDouyinIds.length
+          ? {
+              searchSummary: {
+                requested: requestedDouyinIds.length,
+                found: matchedDouyinIds.length,
+                missingKeywords: requestedDouyinIds.filter(
+                  (douyinId) => !matchedDouyinIds.includes(douyinId)
+                )
+              }
+            }
+          : {}),
         stats: {
           total: Object.values(statusMap).reduce((sum, count) => sum + count, 0),
           unsold: statusMap.unsold ?? 0,

@@ -25,6 +25,9 @@ export function createAccountsRouter(service: AccountsService): Router {
   router.get("/", async (req, res, next) => {
     try { res.json(await service.list(req.query)); } catch (error) { next(error); }
   });
+  router.post("/query", async (req, res, next) => {
+    try { res.json(await service.list(req.body)); } catch (error) { next(error); }
+  });
   router.get("/owners", async (_req, res, next) => {
     try { res.json(await service.owners()); } catch (error) { next(error); }
   });
