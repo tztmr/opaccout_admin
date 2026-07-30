@@ -15,11 +15,12 @@ describe("account filter state", () => {
       new Set()
     );
 
-    expect(result.get("format")).toBe("xlsx");
-    expect(result.get("owner")).toBe("张三");
-    expect(result.get("saleStatus")).toBe("unknown");
-    expect(result.get("sortDirection")).toBe("desc");
-    expect(result.has("page")).toBe(false);
+    expect(result).toEqual({
+      format: "xlsx",
+      owner: "张三",
+      saleStatus: "unknown",
+      sortDirection: "desc"
+    });
   });
 
   it("prioritizes selected ids over filters", () => {
@@ -28,7 +29,9 @@ describe("account filter state", () => {
       new Set(["a", "b"])
     );
 
-    expect(result.get("ids")).toBe("a,b");
-    expect(result.has("owner")).toBe(false);
+    expect(result).toEqual({
+      format: "xlsx",
+      ids: ["a", "b"]
+    });
   });
 });

@@ -204,7 +204,35 @@ export function AccountsPage() {
     : "";
   const currentIds=data?.items.map((item)=>item._id)??[];
   const allChecked=currentIds.length>0&&currentIds.every((id)=>selected.has(id));
-  const exportParams=buildAccountExportParams(urlParams,selected);
+  const handleExport = async() => {
+    try {
+      const payload = buildAccountExportParams(urlParams, selected);
+      const response = await fetch("/api/exports/accounts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+        credentials: "include"
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({
+          error: { message: "导出失败" }
+        }));
+        setMessage(body.error?.message ?? "导出失败");
+        return;
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "douyin-accounts.xlsx";
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "导出失败");
+    }
+  };
   return <section>
     <header className="page-head"><div><h1>抖音账号管理</h1><p>统一维护账号归属、售卖和账号状态</p></div><button className="primary" onClick={()=>setDrawer({mode:"create",value:{...blank}})}><Plus size={17}/>新增账号</button></header>
     <div className="stats">
@@ -222,7 +250,7 @@ export function AccountsPage() {
         <details className="date-filter"><summary>注册时间</summary><div><label>开始<input type="date" value={registeredFrom} onChange={e=>updateParams({registeredFrom:e.target.value,page:""})}/></label><label>结束<input type="date" value={registeredTo} onChange={e=>updateParams({registeredTo:e.target.value,page:""})}/></label></div></details>
         <button type="button" onClick={()=>updateParams({sortDirection:sortDirection==="asc"?"desc":"asc",page:"1"})}>{`注册时间${sortDirection==="asc"?"升序":"降序"}`}</button>
         {(search||saleStatus||accountStatus||owner||registeredFrom||registeredTo)&&<button onClick={()=>{setKeyword("");setUrlParams({}, {replace:true})}}>清空</button>}
-        <span className="toolbar-space"/><Link className="button" to="/imports"><Upload size={16}/>导入 Excel</Link><a className="button" href={`/api/exports/accounts?${exportParams}`}><Download size={16}/>{selected.size?`导出已选 ${selected.size} 条`:"导出数据"}</a>
+        <span className="toolbar-space"/><Link className="button" to="/imports"><Upload size={16}/>导入 Excel</Link><button type="button" className="button" onClick={()=>void handleExport()}><Download size={16}/>{selected.size?`导出已选 ${selected.size} 条`:"导出数据"}</button>
       </div>
       {selected.size>0&&<div className="batch-bar"><strong>已选择 {selected.size} 条</strong><button onClick={()=>setBatchDialog({type:"status",value:DEFAULT_ACCOUNT_SALE_STATUS})}>修改售卖状态</button><button onClick={()=>setBatchDialog({type:"owner",value:""})}>修改归属人</button><button onClick={()=>setBatchDialog({type:"registeredRegion",value:""})}>修改注册地区</button><button onClick={()=>setBatchDialog({type:"remark",value:""})}>批量备注</button><button disabled={recheckBusy} onClick={()=>runBatch("recheck")}><RefreshCw size={14}/>重新检测</button><button disabled={recheckBusy} onClick={()=>runBatch("recheckOp")}>重新检测 OP</button><button className="danger-text" onClick={()=>runBatch("delete")}><Trash2 size={14}/>删除</button></div>}
       <div className="table-scroll"><table><thead><tr><th className="check-cell"><input aria-label="选择当前页" type="checkbox" checked={allChecked} onChange={()=>setSelected(allChecked?new Set():new Set(currentIds))}/></th>{["序号","抖音号","sec_uid","注册时间","OP名称","OP卡密","OP到期时间","归属人","注册地区","售卖状态","账号状态","备注","操作"].map(v=><th key={v} className={v==="序号"?"index-cell":undefined}>{v}</th>)}</tr></thead>

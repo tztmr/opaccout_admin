@@ -15,15 +15,35 @@ const FILTER_KEYS = [
 export function buildAccountExportParams(
   url: URLSearchParams,
   selected: Set<string>
-): URLSearchParams {
-  const result = new URLSearchParams({ format: "xlsx" });
+): {
+  format: "xlsx";
+  ids?: string[];
+  keyword?: string;
+  sortDirection?: string;
+  saleStatus?: string;
+  accountStatus?: string;
+  owner?: string;
+  registeredFrom?: string;
+  registeredTo?: string;
+} {
+  const result: {
+    format: "xlsx";
+    ids?: string[];
+    keyword?: string;
+    sortDirection?: string;
+    saleStatus?: string;
+    accountStatus?: string;
+    owner?: string;
+    registeredFrom?: string;
+    registeredTo?: string;
+  } = { format: "xlsx" };
   if (selected.size > 0) {
-    result.set("ids", [...selected].join(","));
+    result.ids = [...selected];
     return result;
   }
   for (const key of FILTER_KEYS) {
     const value = url.get(key);
-    if (value) result.set(key, value);
+    if (value) result[key] = value;
   }
   return result;
 }
