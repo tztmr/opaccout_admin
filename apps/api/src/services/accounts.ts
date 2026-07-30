@@ -419,7 +419,12 @@ export function createAccountsService({
 
     async batchUpdate(
       ids: string[],
-      patch: { saleStatus?: SaleStatus; owner?: string; registeredRegion?: string },
+      patch: {
+        saleStatus?: SaleStatus;
+        owner?: string;
+        registeredRegion?: string;
+        remark?: string;
+      },
       context: AuditContext
     ) {
       if (!ids.length || ids.length > 500) throw new AppError(400, "BATCH_IDS_INVALID", "请选择 1 至 500 条数据");
@@ -428,6 +433,9 @@ export function createAccountsService({
       if (patch.owner?.trim()) allowedPatch.owner = patch.owner.trim();
       if (patch.registeredRegion?.trim()) {
         allowedPatch.registeredRegion = patch.registeredRegion.trim();
+      }
+      if ("remark" in patch) {
+        allowedPatch.remark = patch.remark?.trim() ?? "";
       }
       if (!Object.keys(allowedPatch).length) throw new AppError(400, "BATCH_PATCH_EMPTY", "没有可修改的字段");
       if (patch.saleStatus && patch.saleStatus !== "disabled") {

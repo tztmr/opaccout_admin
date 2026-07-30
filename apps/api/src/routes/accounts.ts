@@ -15,7 +15,8 @@ const BatchUpdateSchema = z.object({
   ids: z.array(z.string()).min(1).max(500),
   saleStatus: z.enum(SALE_STATUSES).optional(),
   owner: z.string().trim().min(1).max(100).optional(),
-  registeredRegion: z.string().trim().min(1).max(100).optional()
+  registeredRegion: z.string().trim().min(1).max(100).optional(),
+  remark: z.string().trim().max(1000).optional()
 }).strict();
 const BatchIdsSchema = z.object({
   ids: z.array(z.string()).min(1).max(500)
@@ -44,7 +45,8 @@ export function createAccountsRouter(service: AccountsService): Router {
       res.json(await service.batchUpdate(value.ids, {
         ...(value.saleStatus ? { saleStatus: value.saleStatus } : {}),
         ...(value.owner ? { owner: value.owner } : {}),
-        ...(value.registeredRegion ? { registeredRegion: value.registeredRegion } : {})
+        ...(value.registeredRegion ? { registeredRegion: value.registeredRegion } : {}),
+        ...(value.remark !== undefined ? { remark: value.remark } : {})
       }, context(req)));
     } catch (error) { next(error); }
   });

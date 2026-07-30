@@ -32,7 +32,8 @@ type AccountSubmitValue = Omit<AccountFormValue, "opSecret"> & { opSecret?: stri
 type BatchDialogState =
   | { type: "status"; value: AccountFormValue["saleStatus"] }
   | { type: "owner"; value: string }
-  | { type: "registeredRegion"; value: string };
+  | { type: "registeredRegion"; value: string }
+  | { type: "remark"; value: string };
 
 const URL_KEYWORD_MAX_LENGTH = 1500;
 
@@ -188,6 +189,10 @@ export function AccountsPage() {
       await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,registeredRegion:nextRegion})});
       setMessage(`已修改 ${ids.length} 条注册地区`);
     }
+    if(batchDialog.type==="remark"){
+      await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,remark:batchDialog.value})});
+      setMessage(`已修改 ${ids.length} 条备注`);
+    }
     setBatchDialog(null);
     setSelected(new Set());
     void client.invalidateQueries({queryKey:["accounts"]});
@@ -219,7 +224,7 @@ export function AccountsPage() {
         {(search||saleStatus||accountStatus||owner||registeredFrom||registeredTo)&&<button onClick={()=>{setKeyword("");setUrlParams({}, {replace:true})}}>清空</button>}
         <span className="toolbar-space"/><Link className="button" to="/imports"><Upload size={16}/>导入 Excel</Link><a className="button" href={`/api/exports/accounts?${exportParams}`}><Download size={16}/>{selected.size?`导出已选 ${selected.size} 条`:"导出数据"}</a>
       </div>
-      {selected.size>0&&<div className="batch-bar"><strong>已选择 {selected.size} 条</strong><button onClick={()=>setBatchDialog({type:"status",value:DEFAULT_ACCOUNT_SALE_STATUS})}>修改售卖状态</button><button onClick={()=>setBatchDialog({type:"owner",value:""})}>修改归属人</button><button onClick={()=>setBatchDialog({type:"registeredRegion",value:""})}>修改注册地区</button><button disabled={recheckBusy} onClick={()=>runBatch("recheck")}><RefreshCw size={14}/>重新检测</button><button disabled={recheckBusy} onClick={()=>runBatch("recheckOp")}>重新检测 OP</button><button className="danger-text" onClick={()=>runBatch("delete")}><Trash2 size={14}/>删除</button></div>}
+      {selected.size>0&&<div className="batch-bar"><strong>已选择 {selected.size} 条</strong><button onClick={()=>setBatchDialog({type:"status",value:DEFAULT_ACCOUNT_SALE_STATUS})}>修改售卖状态</button><button onClick={()=>setBatchDialog({type:"owner",value:""})}>修改归属人</button><button onClick={()=>setBatchDialog({type:"registeredRegion",value:""})}>修改注册地区</button><button onClick={()=>setBatchDialog({type:"remark",value:""})}>批量备注</button><button disabled={recheckBusy} onClick={()=>runBatch("recheck")}><RefreshCw size={14}/>重新检测</button><button disabled={recheckBusy} onClick={()=>runBatch("recheckOp")}>重新检测 OP</button><button className="danger-text" onClick={()=>runBatch("delete")}><Trash2 size={14}/>删除</button></div>}
       <div className="table-scroll"><table><thead><tr><th className="check-cell"><input aria-label="选择当前页" type="checkbox" checked={allChecked} onChange={()=>setSelected(allChecked?new Set():new Set(currentIds))}/></th>{["序号","抖音号","sec_uid","注册时间","OP名称","OP卡密","OP到期时间","归属人","注册地区","售卖状态","账号状态","备注","操作"].map(v=><th key={v} className={v==="序号"?"index-cell":undefined}>{v}</th>)}</tr></thead>
       <tbody>{query.isLoading?<tr><td colSpan={14} className="empty">正在加载…</td></tr>:data?.items.length?data.items.map((row,index)=><tr key={row._id}>
         <td className="check-cell"><input aria-label={`选择账号 ${row.douyinId}`} type="checkbox" checked={selected.has(row._id)} onChange={()=>setSelected((current)=>{const next=new Set(current);next.has(row._id)?next.delete(row._id):next.add(row._id);return next})}/></td><td className="index-cell">{pageSize===ACCOUNT_PAGE_SIZE_ALL?index+1:(page-1)*Number(pageSize)+index+1}</td><td>{row.douyinId}</td><td title={row.secUid || undefined}>{row.secUid ? <a className="link" href={`https://www.douyin.com/user/${row.secUid}`} target="_blank" rel="noreferrer">{row.secUid}</a> : "—"}</td><td>{row.registeredAt.slice(0,10)}</td><td>{row.opName||"—"}</td><td><button className="link" onClick={()=>reveal(row._id)}>•••••• <Eye size={14}/></button></td><td>{new Date(row.opExpiresAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</td><td>{row.owner}</td>
@@ -267,8 +272,18 @@ function AccountDrawer({state,owners,busy,close,submit}:{state:{mode:"create"|"e
 }
 
 function BatchUpdateDialog({state,owners,close,submit,setValue}:{state:BatchDialogState;owners:string[];close():void;submit():void;setValue(value:string):void}) {
-  const title = state.type==="status" ? "修改售卖状态" : state.type==="owner" ? "修改归属人" : "修改注册地区";
-  const confirmDisabled = state.type==="status" ? !state.value : !state.value.trim();
+  const title = state.type==="status"
+    ? "修改售卖状态"
+    : state.type==="owner"
+      ? "修改归属人"
+      : state.type==="registeredRegion"
+        ? "修改注册地区"
+        : "批量备注";
+  const confirmDisabled = state.type==="status"
+    ? !state.value
+    : state.type==="remark"
+      ? false
+      : !state.value.trim();
   return <div className="overlay overlay-center" onMouseDown={e=>{if(e.target===e.currentTarget)close()}}>
     <div className="dialog-card" role="dialog" aria-modal="true" aria-labelledby="batch-dialog-title">
       <header><div><h2 id="batch-dialog-title">{title}</h2><p>将应用到当前选中的账号</p></div><button type="button" className="icon-button" onClick={close}><X/></button></header>
@@ -277,7 +292,9 @@ function BatchUpdateDialog({state,owners,close,submit,setValue}:{state:BatchDial
           ? <label>售卖状态<select aria-label="售卖状态" value={state.value} onChange={e=>setValue(e.target.value)}>{Object.entries(SALE_STATUS_LABELS).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
           : state.type==="owner"
             ? <label>归属人<input aria-label="归属人" list="batch-owner-options" value={state.value} onChange={e=>setValue(e.target.value)}/><datalist id="batch-owner-options">{owners.map(value=><option key={value} value={value}/>)}</datalist></label>
-            : <label>注册地区<input aria-label="注册地区" value={state.value} onChange={e=>setValue(e.target.value)}/></label>}
+            : state.type==="registeredRegion"
+              ? <label>注册地区<input aria-label="注册地区" value={state.value} onChange={e=>setValue(e.target.value)}/></label>
+              : <label>备注<textarea aria-label="备注" value={state.value} onChange={e=>setValue(e.target.value)} maxLength={1000}/></label>}
       </div>
       <footer><button type="button" onClick={close}>取消</button><button type="button" className="primary" disabled={confirmDisabled} onClick={submit}>确定</button></footer>
     </div>
