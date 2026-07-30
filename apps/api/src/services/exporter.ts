@@ -3,6 +3,16 @@ import type { SecretCipher } from "./encryption";
 import type { AccountRecord } from "../models/account";
 import { ACCOUNT_STATUS_LABELS, SALE_STATUS_LABELS } from "@douyin-admin/shared";
 
+function markColumnAsText(sheet: XLSX.WorkSheet, columnIndex: number, rowCount: number) {
+  for (let rowIndex = 2; rowIndex <= rowCount + 1; rowIndex += 1) {
+    const address = XLSX.utils.encode_cell({ c: columnIndex, r: rowIndex - 1 });
+    const cell = sheet[address];
+    if (!cell) continue;
+    cell.t = "s";
+    cell.z = "@";
+  }
+}
+
 export function exportAccounts(
   accounts: Array<AccountRecord & { _id: unknown }>,
   cipher: SecretCipher,
@@ -23,6 +33,7 @@ export function exportAccounts(
   }));
   const sheet = XLSX.utils.json_to_sheet(rows);
   if (format === "csv") return Buffer.from(XLSX.utils.sheet_to_csv(sheet), "utf8");
+  markColumnAsText(sheet, 2, rows.length);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "抖音账号");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
