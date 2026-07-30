@@ -304,4 +304,53 @@ describe("account routes", () => {
       expect.objectContaining({ requestId: expect.any(String) })
     );
   });
+
+  it("forwards a batch override dates request", async () => {
+    const batchOverrideDates = vi.fn(async () => ({ matched: 2, updated: 2 }));
+    const accountService = {
+      create: vi.fn(),
+      list: vi.fn(),
+      owners: vi.fn(),
+      check: vi.fn(),
+      get: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+      batchRemove: vi.fn(),
+      reveal: vi.fn(),
+      batchUpdate: vi.fn(),
+      recheck: vi.fn(),
+      recheckOp: vi.fn(),
+      batchRecheck: vi.fn(),
+      batchRecheckOp: vi.fn(),
+      batchOverrideDates
+    } as unknown as AccountsService;
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const agent = new request.agent(
+      createApp({ config: testConfig, adminAuth, accountService })
+    );
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const response = await agent.post("/api/accounts/batch-override-dates").send({
+      items: [
+        { douyinId: "123", registeredAt: "21/6/2026 16:56" },
+        { douyinId: "456", registeredAt: "2026年6月24日23:15:19" }
+      ]
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ matched: 2, updated: 2 });
+    expect(batchOverrideDates).toHaveBeenCalledWith(
+      [
+        { douyinId: "123", registeredAt: "21/6/2026 16:56" },
+        { douyinId: "456", registeredAt: "2026年6月24日23:15:19" }
+      ],
+      expect.objectContaining({ requestId: expect.any(String) })
+    );
+  });
 });

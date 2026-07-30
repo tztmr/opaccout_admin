@@ -21,6 +21,7 @@ import {
   resolveAccountStatus
 } from "./op-profile-policy";
 import { DouyinCheckError } from "./douyin-check";
+import { normalizedDate } from "./import-parser";
 import {
   assertBannedSaleStatusChange,
   resolveDetectedSaleStatus
@@ -522,6 +523,35 @@ export function createAccountsService({
         });
       }
       return { succeeded, failed };
+    },
+
+    async batchOverrideDates(items: { douyinId: string; registeredAt: string }[], context: AuditContext) {
+      if (!items.length || items.length > 2000) {
+        throw new AppError(400, "BATCH_ITEMS_INVALID", "一次最多支持覆盖 2000 条");
+      }
+      const validItems = items.map(item => ({
+        douyinId: item.douyinId,
+        registeredAt: normalizedDate(item.registeredAt)
+      })).filter(item => item.registeredAt !== "");
+
+      if (!validItems.length) return { matched: 0, updated: 0 };
+
+      const bulkOps = validItems.map(item => ({
+        updateOne: {
+          filter: { douyinId: item.douyinId },
+          update: { $set: { registeredAt: new Date(`${item.registeredAt}T00:00:00.000Z`) } }
+        }
+      }));
+
+      const douyinIds = validItems.map(i => i.douyinId);
+      const matched = await model.find({ douyinId: { $in: douyinIds } }).select('_id douyinId').lean();
+      
+      const result = await model.bulkWrite(bulkOps);
+      
+      if (matched.length) {
+        await writeAudit("account.batch_override_dates", matched.map(m => String(m._id)), ["registeredAt"], context);
+      }
+      return { matched: matched.length, updated: result.modifiedCount };
     }
   };
 }

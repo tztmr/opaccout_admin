@@ -104,6 +104,31 @@ export function ImportsPage() {
     if (!pasteText.trim()) return;
 
     const lines = pasteText.split('\n').map(line => line.trim()).filter(Boolean);
+
+    // Date Override Mode detection
+    const isOverrideMode = lines.every(line => line.split('----').length === 2);
+    if (isOverrideMode) {
+      const items = lines.map(line => {
+        const [douyinId, rawDate] = line.split('----').map(p => p.trim());
+        // Since we don't have normalizedDate in frontend easily, we can just send raw date?
+        // Wait! The backend batchOverrideDates expects `registeredAt` to be valid YYYY-MM-DD.
+        // We should parse it using our normalizedDate logic, or we can move normalizedDate to a place we can share.
+        // Or we can just let the backend API call normalizedDate!
+        return { douyinId: douyinId ?? "", registeredAt: rawDate ?? "" };
+      });
+      // We will need backend to parse the raw date.
+      api<{ matched: number; updated: number }>("/api/accounts/batch-override-dates", {
+        method: "POST",
+        body: JSON.stringify({ items })
+      }).then(res => {
+        setNotice(`时间覆盖完成：匹配到 ${res.matched} 个账号，成功更新 ${res.updated} 个`);
+        setPasteText("");
+      }).catch(err => {
+        setNotice(err instanceof Error ? err.message : "时间覆盖失败");
+      });
+      return;
+    }
+
     const headers = ["抖音号", "注册时间", "OP名称", "OP卡密", "归属人", "注册地区", "售卖状态", "备注"];
 
     const escapeCsv = (val: string) => `"${val.replace(/"/g, '""')}"`;
@@ -151,12 +176,12 @@ export function ImportsPage() {
       <form className="upload-card paste-card" onSubmit={handlePasteSubmit}>
         <div className="upload-icon" style={{ background: '#fdf3ed', color: '#e87c47' }}><FileText size={28}/></div>
         <h2>文本快捷导入</h2>
-        <p>支持多行粘贴，各字段用 <code>----</code> 分隔</p>
+        <p>支持多行粘贴，各字段用 <code>----</code> 分隔。<br/>若每行仅有 <code>抖音号----注册时间</code>，则自动进入<strong>覆盖时间模式</strong>。</p>
         <textarea 
           className="paste-input"
           value={pasteText}
           onChange={e => setPasteText(e.target.value)}
-          placeholder="抖音号----注册时间----OP名称----OP卡密----归属人----注册地区----售卖状态----备注"
+          placeholder="抖音号----注册时间----OP名称----OP卡密----归属人----注册地区----售卖状态----备注&#10;（或仅输入 抖音号----注册时间 以覆盖时间）"
           required
         />
         <button className="primary" disabled={upload.isPending || !pasteText.trim()}>{upload.isPending ? "解析中…" : "解析并预览"}</button>

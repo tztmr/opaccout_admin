@@ -22,6 +22,15 @@ const BatchIdsSchema = z.object({
   ids: z.array(z.string()).min(1).max(500)
 }).strict();
 
+const BatchOverrideDatesSchema = z.object({
+  items: z.array(
+    z.object({
+      douyinId: z.string().trim().min(1),
+      registeredAt: z.string().trim().min(1)
+    })
+  ).min(1).max(2000)
+}).strict();
+
 export function createAccountsRouter(service: AccountsService): Router {
   const router = Router();
   router.get("/", async (req, res, next) => {
@@ -66,6 +75,12 @@ export function createAccountsRouter(service: AccountsService): Router {
     try {
       const value = BatchIdsSchema.parse(req.body);
       res.json(await service.batchRecheckOp(value.ids, context(req)));
+    } catch (error) { next(error); }
+  });
+  router.post("/batch-override-dates", async (req, res, next) => {
+    try {
+      const value = BatchOverrideDatesSchema.parse(req.body);
+      res.json(await service.batchOverrideDates(value.items, context(req)));
     } catch (error) { next(error); }
   });
   router.get("/:id", async (req, res, next) => {

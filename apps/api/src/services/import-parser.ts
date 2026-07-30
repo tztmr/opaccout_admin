@@ -39,7 +39,7 @@ function pickValue(
   return "";
 }
 
-function normalizedDate(value: unknown): string {
+export function normalizedDate(value: unknown): string {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return shanghaiDate(value);
   }
