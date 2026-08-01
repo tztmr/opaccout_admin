@@ -19,9 +19,12 @@ function appendOpRemark(remark: string, message: string): string {
 }
 
 export function isOpTokenInvalid(result: OpProfileCheckResult): boolean {
+  const message = result.kind === "message"
+    ? result.message.trim().toLowerCase()
+    : "";
   return (
-    result.kind === "message" &&
-    result.message.trim().toLowerCase() === "token is invalid"
+    message === "token is invalid" ||
+    message === "not login"
   );
 }
 

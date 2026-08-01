@@ -95,6 +95,15 @@ describe("resolveAccountStatus", () => {
     ).toBe("op_invalid");
   });
 
+  it("marks OP not login as op_invalid", () => {
+    expect(
+      resolveAccountStatus("normal", {
+        kind: "message",
+        message: "not login"
+      })
+    ).toBe("op_invalid");
+  });
+
   it("keeps detected Douyin status for other OP outcomes", () => {
     expect(resolveAccountStatus("banned", { kind: "invalid-openid" })).toBe(
       "banned"
