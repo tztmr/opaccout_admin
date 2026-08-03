@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Eye, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
+import { flushSync } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import type { AccountDto, AccountStats, PagedResponse } from "@douyin-admin/shared";
 import {
@@ -36,6 +37,19 @@ type BatchDialogState =
   | { type: "remark"; value: string };
 
 const URL_KEYWORD_MAX_LENGTH = 1500;
+
+function waitForNextPaint() {
+  return new Promise<void>((resolve) => {
+    if (typeof window === "undefined") {
+      setTimeout(resolve, 0);
+      return;
+    }
+    const scheduleFrame =
+      window.requestAnimationFrame?.bind(window) ??
+      ((callback: FrameRequestCallback) => window.setTimeout(callback, 16));
+    scheduleFrame(() => resolve());
+  });
+}
 
 function buildAccountListPayload({
   keyword,
@@ -145,8 +159,11 @@ export function AccountsPage() {
   const owners=ownersQuery.data?.items??[];
   const recheckBusy = progressText.length > 0;
   const runWithProgress = async<T,>(label:string, action:()=>Promise<T>) => {
-    setProgressText(label);
+    flushSync(() => {
+      setProgressText(label);
+    });
     try {
+      await waitForNextPaint();
       return await action();
     } finally {
       setProgressText("");
@@ -166,8 +183,12 @@ export function AccountsPage() {
     if(action==="delete"&&!confirm(`确定删除选中的 ${ids.length} 条账号吗？`))return;
     if(action==="recheck"){await runWithProgress(`正在检测 ${ids.length} 条账号…`, async()=>{await api("/api/accounts/batch-recheck",{method:"POST",body:JSON.stringify({ids})});setMessage(`已完成 ${ids.length} 条账号检测`)})}
     if(action==="recheckOp"){await runWithProgress(`正在检测 ${ids.length} 条 OP…`, async()=>{const result=await api<{succeeded:Array<{_id:string}>;failed:Array<{id:string;code:string}>}>("/api/accounts/batch-recheck-op",{method:"POST",body:JSON.stringify({ids})});setMessage(result.failed.length?`已完成 ${result.succeeded.length} 条 OP 检测，失败 ${result.failed.length} 条`:`已完成 ${result.succeeded.length} 条 OP 检测`)})}
-    if(action==="delete"){await api("/api/accounts/batch-delete",{method:"POST",body:JSON.stringify({ids})});setMessage(`已删除 ${ids.length} 条账号`)}
-    setSelected(new Set());void client.invalidateQueries({queryKey:["accounts"]});if(action==="delete")void client.invalidateQueries({queryKey:["account-owners"]});
+    if(action==="delete"){
+      await api("/api/accounts/batch-delete",{method:"POST",body:JSON.stringify({ids})});
+      setMessage(`已删除 ${ids.length} 条账号`);
+      setSelected(new Set());
+    }
+    void client.invalidateQueries({queryKey:["accounts"]});if(action==="delete")void client.invalidateQueries({queryKey:["account-owners"]});
   };
   const submitBatchDialog = async() => {
     const ids=[...selected];
@@ -194,7 +215,6 @@ export function AccountsPage() {
       setMessage(`已修改 ${ids.length} 条备注`);
     }
     setBatchDialog(null);
-    setSelected(new Set());
     void client.invalidateQueries({queryKey:["accounts"]});
   };
   const data=query.data;

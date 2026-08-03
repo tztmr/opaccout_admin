@@ -25,14 +25,14 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function renderPage() {
+function renderPage(initialEntries = ["/accounts"]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
   });
 
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={["/accounts"]}>
+      <MemoryRouter initialEntries={initialEntries}>
         <Routes>
           <Route path="/accounts" element={<AccountsPage />} />
         </Routes>
@@ -351,6 +351,376 @@ describe("accounts page", () => {
     });
   });
 
+  it("keeps selected accounts after a batch recheck completes", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck") {
+        expect(init?.method).toBe("POST");
+        return json({ ok: true });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const checkbox = await screen.findByRole("checkbox", { name: "选择账号 94946893573" });
+    await user.click(checkbox);
+    await user.click(
+      within(screen.getByText(/已选择 1 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测" })
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/accounts/batch-recheck",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).toBeChecked();
+    expect(screen.getByText(/已选择 1 条/)).toBeInTheDocument();
+  });
+
+  it("keeps selected accounts after a batch OP recheck completes", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck-op") {
+        expect(init?.method).toBe("POST");
+        return json({ succeeded: [{ _id: "account-1" }], failed: [] });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const checkbox = await screen.findByRole("checkbox", { name: "选择账号 94946893573" });
+    await user.click(checkbox);
+    await user.click(
+      within(screen.getByText(/已选择 1 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测 OP" })
+    );
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/accounts/batch-recheck-op",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+
+    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).toBeChecked();
+    expect(screen.getByText(/已选择 1 条/)).toBeInTheDocument();
+  });
+
+  it("shows a progress bar while a batch recheck is running with page size set to all", async () => {
+    const batchRequest = deferred<Response>();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        const params = new URLSearchParams(path.split("?")[1] ?? "");
+        expect(params.get("page")).toBe("1");
+        expect(params.get("pageSize")).toBe("all");
+        expect(params.get("sortDirection")).toBe("asc");
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture-1",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称1",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            },
+            {
+              _id: "account-2",
+              douyinId: "93180119509",
+              secUid: "MS4wLjABAAAA-fixture-2",
+              registeredAt: "2026-07-02T00:00:00.000Z",
+              opName: "API昵称2",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-02T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-02T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-02T00:00:00.000Z",
+              updatedAt: "2026-07-02T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: "all",
+          total: 2,
+          totalPages: 1,
+          stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck") {
+        return batchRequest.promise;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts?pageSize=all"]);
+    await user.click(await screen.findByRole("checkbox", { name: "选择当前页" }));
+    await user.click(
+      within(screen.getByText(/已选择 2 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测" })
+    );
+
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
+
+    batchRequest.resolve(json({ ok: true }));
+    await waitFor(() => {
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows a progress bar while a batch OP recheck is running with page size set to all", async () => {
+    const batchRequest = deferred<Response>();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        const params = new URLSearchParams(path.split("?")[1] ?? "");
+        expect(params.get("page")).toBe("1");
+        expect(params.get("pageSize")).toBe("all");
+        expect(params.get("sortDirection")).toBe("asc");
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture-1",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称1",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            },
+            {
+              _id: "account-2",
+              douyinId: "93180119509",
+              secUid: "MS4wLjABAAAA-fixture-2",
+              registeredAt: "2026-07-02T00:00:00.000Z",
+              opName: "API昵称2",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-02T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-02T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-02T00:00:00.000Z",
+              updatedAt: "2026-07-02T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: "all",
+          total: 2,
+          totalPages: 1,
+          stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck-op") {
+        return batchRequest.promise;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts?pageSize=all"]);
+    await user.click(await screen.findByRole("checkbox", { name: "选择当前页" }));
+    await user.click(
+      within(screen.getByText(/已选择 2 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测 OP" })
+    );
+
+    expect(await screen.findByRole("progressbar")).toBeInTheDocument();
+
+    batchRequest.resolve(
+      json({ succeeded: [{ _id: "account-1" }, { _id: "account-2" }], failed: [] })
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    });
+  });
+
+  it("waits for the next paint before starting a batch recheck request with page size set to all", async () => {
+    const batchRequest = deferred<Response>();
+    let runFrame: ((time: number) => void) | null = null;
+    let requestStarted = false;
+    vi.stubGlobal("requestAnimationFrame", (callback: (time: number) => void) => {
+      runFrame = callback;
+      return 1;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        const params = new URLSearchParams(path.split("?")[1] ?? "");
+        expect(params.get("page")).toBe("1");
+        expect(params.get("pageSize")).toBe("all");
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture-1",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称1",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            },
+            {
+              _id: "account-2",
+              douyinId: "93180119509",
+              secUid: "MS4wLjABAAAA-fixture-2",
+              registeredAt: "2026-07-02T00:00:00.000Z",
+              opName: "API昵称2",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-02T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-02T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-02T00:00:00.000Z",
+              updatedAt: "2026-07-02T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: "all",
+          total: 2,
+          totalPages: 1,
+          stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck") {
+        requestStarted = true;
+        return batchRequest.promise;
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts?pageSize=all"]);
+    await user.click(await screen.findByRole("checkbox", { name: "选择当前页" }));
+    await user.click(
+      within(screen.getByText(/已选择 2 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测" })
+    );
+
+    expect(screen.getByRole("progressbar")).toBeInTheDocument();
+    expect(requestStarted).toBe(false);
+
+    expect(runFrame).not.toBeNull();
+    const frame = runFrame;
+    if (!frame) {
+      throw new Error("requestAnimationFrame was not scheduled");
+    }
+    (frame as (time: number) => void)(16);
+    await waitFor(() => {
+      expect(requestStarted).toBe(true);
+    });
+
+    batchRequest.resolve(json({ ok: true }));
+    await waitFor(() => {
+      expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    });
+  });
+
   it("shows 注册地区 and submits a batch registeredRegion update", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
@@ -474,5 +844,8 @@ describe("accounts page", () => {
         expect.objectContaining({ method: "POST" })
       );
     });
+
+    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).toBeChecked();
+    expect(screen.getByText(/已选择 1 条/)).toBeInTheDocument();
   });
 });
