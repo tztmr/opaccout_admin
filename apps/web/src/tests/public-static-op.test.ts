@@ -33,7 +33,9 @@ describe("static public short OP page", () => {
   it("ships an iOS-friendly static shell that targets the current resolve API", () => {
     expect(opHtml).toContain("短码登录");
     expect(opHtml).toContain("9 位短 OP");
-    expect(opHtml).toContain('src="/op.js"');
+    expect(opHtml).toContain("initializeShortOpPage");
+    expect(opHtml).toContain('fetch("/api/op/resolve"');
+    expect(opHtml).not.toContain('src="/op.js"');
     expect(opHtml).toContain("立即打开");
     expect(opHtml).not.toContain("react");
     expect(opHtml).not.toContain("type=\"module\"");
