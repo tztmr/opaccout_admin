@@ -1,11 +1,13 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileClock, ListChecks, LogOut, Settings, Users } from "lucide-react";
-import { Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "../api";
 import { AccountsPage } from "../features/AccountsPage";
 import { ImportsPage } from "../features/ImportsPage";
 import { SimplePage } from "../features/SimplePage";
 import { AuthEntry } from "../features/AuthEntry";
+import { ShortOpPage } from "../features/ShortOpPage";
+import { isPublicOpHost } from "../features/public-op-routing";
 
 type Session = { authenticated: true; username: string };
 
@@ -54,10 +56,30 @@ function Shell() {
   </div>;
 }
 
-export function App() {
+function LegacyPublicOpRedirect() {
+  const { code } = useParams();
+  return <Navigate to={code ? `/${code}` : "/"} replace />;
+}
+
+function PublicOpRoutes() {
   return <Routes>
+    <Route path="/" element={<ShortOpPage />} />
+    <Route path="/:code" element={<ShortOpPage />} />
+    <Route path="/op" element={<Navigate to="/" replace />} />
+    <Route path="/op/:code" element={<LegacyPublicOpRedirect />} />
+    <Route path="*" element={<Navigate to="/" replace />} />
+  </Routes>;
+}
+
+function AdminRoutes() {
+  return <Routes>
+    <Route path="/" element={<Navigate to="/login" replace />} />
     <Route path="/setup" element={<AuthEntry mode="setup" />} />
     <Route path="/login" element={<AuthEntry mode="login" />} />
     <Route path="/*" element={<Shell/>}/>
   </Routes>;
+}
+
+export function App({ hostname = window.location.hostname }: { hostname?: string }) {
+  return isPublicOpHost(hostname) ? <PublicOpRoutes /> : <AdminRoutes />;
 }
