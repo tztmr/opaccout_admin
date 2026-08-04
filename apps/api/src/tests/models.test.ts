@@ -13,6 +13,16 @@ describe("Account model", () => {
     expect(secUidIndex?.[1].partialFilterExpression).toEqual({
       secUid: { $gt: "" }
     });
+
+    expect(AccountModel.schema.path("shortOpCode")).toBeDefined();
+    expect(AccountModel.schema.path("opProject")).toBeDefined();
+    expect(indexes).toContainEqual([
+      { shortOpCode: 1 },
+      expect.objectContaining({
+        unique: true,
+        partialFilterExpression: { shortOpCode: { $type: "string" } }
+      })
+    ]);
   });
 
   it("accepts unknown and rejects values outside the shared status enums", async () => {

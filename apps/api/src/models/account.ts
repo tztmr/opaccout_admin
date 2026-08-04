@@ -1,5 +1,7 @@
 import {
   ACCOUNT_STATUSES,
+  DEFAULT_OP_PROJECT,
+  OpProjectSchema,
   SALE_STATUSES,
   type AccountStatus,
   type SaleStatus
@@ -20,6 +22,8 @@ export type AccountRecord = {
   accountStatus: AccountStatus;
   accountCheckedAt: Date;
   remark: string;
+  shortOpCode?: string;
+  opProject?: typeof DEFAULT_OP_PROJECT;
   searchText: string;
   createdAt: Date;
   updatedAt: Date;
@@ -57,6 +61,12 @@ const AccountSchema = new Schema<AccountRecord>(
     accountStatus: { type: String, required: true, enum: ACCOUNT_STATUSES },
     accountCheckedAt: { type: Date, required: true },
     remark: { type: String, default: "", trim: true, maxlength: 1000 },
+    shortOpCode: { type: String, required: false, match: /^[1-9][0-9]{8}$/ },
+    opProject: {
+      type: String,
+      required: false,
+      enum: OpProjectSchema.options
+    },
     searchText: { type: String, required: true, default: "" }
   },
   { timestamps: true, versionKey: false }
@@ -67,6 +77,13 @@ AccountSchema.index({ douyinId: 1 }, { unique: true });
 AccountSchema.index(
   { secUid: 1 },
   { unique: true, partialFilterExpression: { secUid: { $gt: "" } } }
+);
+AccountSchema.index(
+  { shortOpCode: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { shortOpCode: { $type: "string" } }
+  }
 );
 AccountSchema.index({ saleStatus: 1 });
 AccountSchema.index({ accountStatus: 1 });
@@ -79,6 +96,8 @@ AccountSchema.pre("validate", function buildSearchText() {
     this.douyinId,
     this.secUid,
     this.opName,
+    this.shortOpCode,
+    this.opProject,
     this.owner,
     this.registeredRegion,
     this.remark
