@@ -313,6 +313,49 @@ describe("account routes", () => {
     );
   });
 
+  it("accepts accountStatus in a batch update request", async () => {
+    const batchUpdate = vi.fn(async () => ({ updated: 2 }));
+    const accountService = {
+      create: vi.fn(),
+      list: vi.fn(),
+      owners: vi.fn(),
+      check: vi.fn(),
+      get: vi.fn(),
+      update: vi.fn(),
+      remove: vi.fn(),
+      batchRemove: vi.fn(),
+      reveal: vi.fn(),
+      batchUpdate,
+      recheck: vi.fn(),
+      recheckOp: vi.fn(),
+      batchRecheck: vi.fn(),
+      batchRecheckOp: vi.fn()
+    } as unknown as AccountsService;
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const agent = new request.agent(
+      createApp({ config: testConfig, adminAuth, accountService })
+    );
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const response = await agent.post("/api/accounts/batch-update").send({
+      ids: ["a", "b"],
+      accountStatus: "violation"
+    });
+
+    expect(response.status).toBe(200);
+    expect(batchUpdate).toHaveBeenCalledWith(
+      ["a", "b"],
+      { accountStatus: "violation" },
+      expect.objectContaining({ requestId: expect.any(String) })
+    );
+  });
+
   it("forwards a batch override dates request", async () => {
     const batchOverrideDates = vi.fn(async () => ({ matched: 2, updated: 2 }));
     const accountService = {

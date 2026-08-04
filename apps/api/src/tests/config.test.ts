@@ -19,6 +19,9 @@ describe("loadConfig", () => {
     expect(config.port).toBe(3000);
     expect(config.cookieSecure).toBe(false);
     expect(config.fieldEncryptionKey).toHaveLength(32);
+    expect(config.douyinProfileApiUrl.href).toBe(
+      "https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/"
+    );
     expect(config.qqOpProfileApiUrl.href).toBe(
       "https://graph.qq.com/user/get_simple_userinfo"
     );
@@ -42,6 +45,16 @@ describe("loadConfig", () => {
     expect(() =>
       loadConfig({ ...validEnv, DOUYIN_CHECK_API_URL: "http://example.com/check" })
     ).toThrow();
+  });
+
+  it("requires an HTTPS Douyin profile API URL", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        DOUYIN_PROFILE_API_URL:
+          "http://imdesktop.douyin.com/aweme/v1/web/user/profile/other/"
+      })
+    ).toThrow("DOUYIN_PROFILE_API_URL");
   });
 
   it("requires exactly 32 encryption-key bytes", () => {

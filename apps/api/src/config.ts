@@ -12,6 +12,12 @@ const EnvironmentSchema = z.object({
   DOUYIN_CHECK_API_URL: z.url().refine((value) => new URL(value).protocol === "https:", {
     message: "DOUYIN_CHECK_API_URL must use HTTPS"
   }),
+  DOUYIN_PROFILE_API_URL: z
+    .url()
+    .default("https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/")
+    .refine((value) => new URL(value).protocol === "https:", {
+      message: "DOUYIN_PROFILE_API_URL must use HTTPS"
+    }),
   QQ_OP_PROFILE_API_URL: z
     .url()
     .default("https://graph.qq.com/user/get_simple_userinfo")
@@ -45,6 +51,7 @@ export type AppConfig = {
   fieldEncryptionKey: Buffer;
   mongoUri: string;
   douyinCheckApiUrl: URL;
+  douyinProfileApiUrl: URL;
   qqOpProfileApiUrl: URL;
   qqOpSocksProxyUrls: URL[];
   qqOpAppId: string;
@@ -68,6 +75,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, string>): App
     fieldEncryptionKey,
     mongoUri: parsed.MONGO_URI,
     douyinCheckApiUrl: new URL(parsed.DOUYIN_CHECK_API_URL),
+    douyinProfileApiUrl: new URL(parsed.DOUYIN_PROFILE_API_URL),
     qqOpProfileApiUrl: new URL(parsed.QQ_OP_PROFILE_API_URL),
     qqOpSocksProxyUrls: parseSocksProxyPool(parsed.QQ_OP_SOCKS_PROXY_URL),
     qqOpAppId: parsed.QQ_OP_APP_ID,

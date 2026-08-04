@@ -4,6 +4,7 @@ import normalFixture from "./fixtures/douyin-normal.json";
 import violationFixture from "./fixtures/douyin-violation.json";
 import {
   createDouyinChecker,
+  parseDouyinProfileOtherResponse,
   parseDouyinResponse
 } from "../services/douyin-check";
 
@@ -35,6 +36,23 @@ describe("parseDouyinResponse", () => {
       })
     };
 
+    expect(parseDouyinResponse(fixture).accountStatus).toBe("violation");
+  });
+
+  it("does not map ban_type=1 alone to banned", () => {
+    const fixture = {
+      status: 200,
+      body: JSON.stringify({
+        status_code: 0,
+        user_info: {
+          sec_uid: "MS4wLjABAAAA-ban-type-only",
+          is_ban: false,
+          punish_remind_info: { is_punish: true, ban_type: 1 }
+        }
+      })
+    };
+
+    // without punish_title, treat as violation rather than banned
     expect(parseDouyinResponse(fixture).accountStatus).toBe("violation");
   });
 
@@ -121,6 +139,44 @@ describe("parseDouyinResponse", () => {
       accountStatus: "normal"
     });
   });
+  it("parses imdesktop profile/other payload with user root", () => {
+    const fixture = {
+      status_code: 0,
+      user: {
+        sec_uid: "MS4wLjABAAAA-profile-other",
+        is_ban: false,
+        punish_remind_info: {
+          is_punish: true,
+          punish_title: "违规处罚说明",
+          prompt_bar: {
+            content: "该用户被禁止关注"
+          }
+        }
+      }
+    };
+
+    expect(parseDouyinProfileOtherResponse(fixture)).toMatchObject({
+      secUid: "MS4wLjABAAAA-profile-other",
+      accountStatus: "violation"
+    });
+    expect(parseDouyinResponse(fixture).accountStatus).toBe("violation");
+  });
+
+  it("maps profile/other normal payload without punishment to normal", () => {
+    const fixture = {
+      status_code: 0,
+      user: {
+        sec_uid: "MS4wLjABAAAAZ-uVtcuXz-9MSs1WIluzMswY9mrfrgW2P9Fk6MVrUbxMXgzJtEweoBD9fRl0eTRy",
+        is_ban: false
+      }
+    };
+
+    expect(parseDouyinResponse(fixture)).toMatchObject({
+      secUid: "MS4wLjABAAAAZ-uVtcuXz-9MSs1WIluzMswY9mrfrgW2P9Fk6MVrUbxMXgzJtEweoBD9fRl0eTRy",
+      accountStatus: "normal"
+    });
+  });
+
 });
 
 describe("createDouyinChecker", () => {
@@ -159,36 +215,20 @@ describe("createDouyinChecker", () => {
       })
     };
     const rechecked = {
-      status: 200,
-      body: JSON.stringify({
-        status_code: 0,
-        user_info: {
-          sec_uid: "MS4wLjABAAAA-from-num",
-          is_ban: true,
-          punish_remind_info: {
-            is_punish: true,
-            ban_type: 1,
-            punish_title: "账号已被封禁"
-          }
+      status_code: 0,
+      user: {
+        sec_uid: "MS4wLjABAAAA-from-num",
+        is_ban: true,
+        punish_remind_info: {
+          is_punish: true,
+          punish_title: "账号已被封禁"
         }
-      })
+      }
     };
 
     const fetchImpl = vi
       .fn<typeof fetch>()
-      // primary path retries and fails with empty body
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(emptyBody), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(emptyBody), {
-          status: 200,
-          headers: { "content-type": "application/json" }
-        })
-      )
+      // primary path fails with empty body
       .mockResolvedValueOnce(
         new Response(JSON.stringify(emptyBody), {
           status: 200,
@@ -202,7 +242,7 @@ describe("createDouyinChecker", () => {
           headers: { "content-type": "application/json" }
         })
       )
-      // fallback: recheck by sec_uid
+      // fallback: recheck via profile/other
       .mockResolvedValueOnce(
         new Response(JSON.stringify(rechecked), {
           status: 200,
@@ -213,7 +253,7 @@ describe("createDouyinChecker", () => {
     const checkDouyinId = createDouyinChecker({
       baseUrl: new URL("https://unid.tztright.top/check"),
       fetchImpl,
-      maxAttempts: 3,
+      maxAttempts: 1,
       retryDelayMs: 0
     });
 
@@ -225,7 +265,7 @@ describe("createDouyinChecker", () => {
     expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("num=94946893573");
     expect(
       fetchImpl.mock.calls.some((call) =>
-        String(call[0]).includes("sec_uid=MS4wLjABAAAA-from-num")
+        String(call[0]).includes("sec_user_id=MS4wLjABAAAA-from-num")
       )
     ).toBe(true);
   });
@@ -298,6 +338,82 @@ describe("createDouyinChecker", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(String(fetchImpl.mock.calls[0]?.[0])).toContain("num=");
     expect(String(fetchImpl.mock.calls[1]?.[0])).toContain("num=");
+  });
+
+  it("uses imdesktop profile/other when secUid is provided", async () => {
+    const profilePayload = {
+      status_code: 0,
+      user: {
+        sec_uid: "MS4wLjABAAAA-existing",
+        is_ban: false,
+        punish_remind_info: {
+          is_punish: true,
+          punish_title: "违规处罚说明",
+          prompt_bar: { content: "该用户被禁止关注" }
+        }
+      }
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async () =>
+      new Response(JSON.stringify(profilePayload), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      })
+    );
+    const checkDouyinId = createDouyinChecker({
+      baseUrl: new URL("https://unid.tztright.top/check"),
+      profileUrl: new URL(
+        "https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/"
+      ),
+      fetchImpl,
+      maxAttempts: 1,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      checkDouyinId("94946893573", { secUid: "MS4wLjABAAAA-existing" })
+    ).resolves.toMatchObject({
+      secUid: "MS4wLjABAAAA-existing",
+      accountStatus: "violation"
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const requested = String(fetchImpl.mock.calls[0]?.[0]);
+    expect(requested).toContain(
+      "https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/"
+    );
+    expect(requested).toContain("sec_user_id=MS4wLjABAAAA-existing");
+    expect(requested).toContain("aid=339757");
+    expect(requested).not.toContain("unid.tztright.top/check");
+  });
+
+  it("falls back to num check when profile/other fails for existing secUid", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("upstream error", { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(normalFixture), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        })
+      );
+    const checkDouyinId = createDouyinChecker({
+      baseUrl: new URL("https://unid.tztright.top/check"),
+      fetchImpl,
+      maxAttempts: 1,
+      retryDelayMs: 0
+    });
+
+    await expect(
+      checkDouyinId("94946893573", { secUid: "MS4wLjABAAAA-existing" })
+    ).resolves.toMatchObject({
+      accountStatus: "normal",
+      secUid: "MS4wLjABAAAA-normal-fixture"
+    });
+
+    expect(String(fetchImpl.mock.calls[0]?.[0])).toContain(
+      "sec_user_id=MS4wLjABAAAA-existing"
+    );
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain("num=94946893573");
   });
 
   it("maps non-standard punishment title to violation", async () => {

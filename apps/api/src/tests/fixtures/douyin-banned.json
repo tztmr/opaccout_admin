@@ -1,4 +1,4 @@
 {
   "status": 200,
-  "body": "{\"status_code\":0,\"user_info\":{\"sec_uid\":\"MS4wLjABAAAA-banned-fixture\",\"is_ban\":true,\"punish_remind_info\":{\"is_punish\":true,\"ban_type\":1,\"punish_title\":\"账号已被封禁\"}}}"
+  "body": "{\"status_code\":0,\"user_info\":{\"sec_uid\":\"MS4wLjABAAAA-banned-fixture\",\"is_ban\":true,\"punish_remind_info\":{\"is_punish\":true,\"punish_title\":\"账号已被封禁\"}}}"
 }

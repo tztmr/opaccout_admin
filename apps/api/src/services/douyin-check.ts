@@ -1,6 +1,10 @@
 import type { AccountStatus } from "@douyin-admin/shared";
 import { z } from "zod";
 
+export const DEFAULT_DOUYIN_PROFILE_API_URL = new URL(
+  "https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/"
+);
+
 const OuterResponseSchema = z.object({
   status: z.number().int(),
   body: z.string()
@@ -10,8 +14,7 @@ const PunishmentSchema = z
   .object({
     is_punish: z.boolean().optional(),
     ban_type: z.number().int().optional(),
-    punish_title: z.string().optional()
-    ,
+    punish_title: z.string().optional(),
     prompt_bar: z
       .object({
         content: z.string().optional()
@@ -27,19 +30,31 @@ const PunishmentSchema = z
   })
   .passthrough();
 
+const InnerUserInfoSchema = z.object({
+  sec_uid: z.string().min(1),
+  is_ban: z.boolean().optional(),
+  punish_remind_info: PunishmentSchema.nullish()
+});
+
 const InnerResponseSchema = z.object({
   status_code: z.number().int(),
-  user_info: z.object({
-    sec_uid: z.string().min(1),
-    is_ban: z.boolean().optional(),
-    punish_remind_info: PunishmentSchema.nullish()
-  })
+  user_info: InnerUserInfoSchema
+});
+
+const ProfileOtherResponseSchema = z.object({
+  status_code: z.number().int(),
+  user: InnerUserInfoSchema
 });
 
 export type DouyinCheckResult = {
   secUid: string;
   accountStatus: AccountStatus;
   checkedAt: Date;
+};
+
+export type DouyinCheckOptions = {
+  secUid?: string;
+  signal?: AbortSignal;
 };
 
 export class DouyinCheckError extends Error {
@@ -64,12 +79,10 @@ function mapAccountStatus(
   const content = [promptContent, punishContent].filter(Boolean).join("\n");
 
   if (title === "账号已被封禁") return "banned";
-  if (punishment?.is_punish && punishment.ban_type === 1) return "banned";
   // profile/other: punish_title=违规处罚说明, content=该用户被禁止关注 => 违规
   if (title === "违规处罚说明" || content.includes("该用户被禁止关注")) {
     return "violation";
   }
-  if (punishment?.is_punish && punishment.ban_type === 2) return "violation";
   if (title) return "violation";
   if (punishment?.is_punish) return "violation";
   if (isBan === true) return "violation";
@@ -100,10 +113,49 @@ function parseJsonish(text: string): unknown {
   return null;
 }
 
+function toCheckResult(
+  user: z.infer<typeof InnerUserInfoSchema>,
+  now: () => Date
+): DouyinCheckResult {
+  return {
+    secUid: user.sec_uid,
+    accountStatus: mapAccountStatus(user.is_ban, user.punish_remind_info),
+    checkedAt: now()
+  };
+}
+
+export function parseDouyinProfileOtherResponse(
+  value: unknown,
+  now: () => Date = () => new Date()
+): DouyinCheckResult {
+  let parsed: z.infer<typeof ProfileOtherResponseSchema>;
+  try {
+    parsed = ProfileOtherResponseSchema.parse(value);
+  } catch {
+    throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID");
+  }
+
+  if (parsed.status_code !== 0) {
+    throw new DouyinCheckError("DOUYIN_INNER_STATUS_INVALID");
+  }
+
+  return toCheckResult(parsed.user, now);
+}
+
 export function parseDouyinResponse(
   value: unknown,
   now: () => Date = () => new Date()
 ): DouyinCheckResult {
+  // Direct profile/other payload from imdesktop.
+  if (
+    value &&
+    typeof value === "object" &&
+    "user" in value &&
+    !("body" in value)
+  ) {
+    return parseDouyinProfileOtherResponse(value, now);
+  }
+
   let outer: z.infer<typeof OuterResponseSchema>;
   let innerValue: unknown;
 
@@ -128,6 +180,16 @@ export function parseDouyinResponse(
     );
   }
 
+  // Some proxies may wrap profile/other JSON in the outer body string.
+  if (
+    innerValue &&
+    typeof innerValue === "object" &&
+    "user" in innerValue &&
+    !("user_info" in innerValue)
+  ) {
+    return parseDouyinProfileOtherResponse(innerValue, now);
+  }
+
   let inner: z.infer<typeof InnerResponseSchema>;
   try {
     inner = InnerResponseSchema.parse(innerValue);
@@ -139,18 +201,12 @@ export function parseDouyinResponse(
     throw new DouyinCheckError("DOUYIN_INNER_STATUS_INVALID");
   }
 
-  return {
-    secUid: inner.user_info.sec_uid,
-    accountStatus: mapAccountStatus(
-      inner.user_info.is_ban,
-      inner.user_info.punish_remind_info
-    ),
-    checkedAt: now()
-  };
+  return toCheckResult(inner.user_info, now);
 }
 
 type DouyinCheckerOptions = {
   baseUrl: URL;
+  profileUrl?: URL;
   fetchImpl?: typeof fetch;
   now?: () => Date;
   timeoutMs?: number;
@@ -158,22 +214,37 @@ type DouyinCheckerOptions = {
   retryDelayMs?: number;
 };
 
+function buildProfileOtherUrl(profileUrl: URL, secUid: string): URL {
+  const requestUrl = new URL(profileUrl.href);
+  if (!requestUrl.searchParams.has("aid")) {
+    requestUrl.searchParams.set("aid", "339757");
+  }
+  if (!requestUrl.searchParams.has("device_id")) {
+    requestUrl.searchParams.set("device_id", "7184690798967999755");
+  }
+  if (!requestUrl.searchParams.has("version_name")) {
+    requestUrl.searchParams.set("version_name", "1.0.0");
+  }
+  if (!requestUrl.searchParams.has("device_platform")) {
+    requestUrl.searchParams.set("device_platform", "win32");
+  }
+  requestUrl.searchParams.set("sec_user_id", secUid);
+  return requestUrl;
+}
+
 export function createDouyinChecker({
   baseUrl,
+  profileUrl = DEFAULT_DOUYIN_PROFILE_API_URL,
   fetchImpl = fetch,
   now = () => new Date(),
   timeoutMs = 10_000,
   maxAttempts = 3,
   retryDelayMs = 400
 }: DouyinCheckerOptions) {
-  async function requestCheck(
-    params: { num?: string; secUid?: string },
+  async function requestJson(
+    requestUrl: URL,
     callerSignal?: AbortSignal
-  ): Promise<DouyinCheckResult> {
-    const requestUrl = new URL(baseUrl);
-    if (params.num) requestUrl.searchParams.set("num", params.num);
-    if (params.secUid) requestUrl.searchParams.set("sec_uid", params.secUid);
-
+  ): Promise<unknown> {
     let lastRetryableError: DouyinCheckError | undefined;
     const attempts = Math.max(1, maxAttempts);
 
@@ -186,7 +257,11 @@ export function createDouyinChecker({
       try {
         const response = await fetchImpl(requestUrl, {
           method: "GET",
-          headers: { accept: "application/json" },
+          headers: {
+            accept: "application/json, text/plain, */*",
+            "user-agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+          },
           signal
         });
 
@@ -197,14 +272,11 @@ export function createDouyinChecker({
           throw new DouyinCheckError("DOUYIN_UPSTREAM_REJECTED");
         }
 
-        let responseValue: unknown;
         try {
-          responseValue = await response.json();
+          return await response.json();
         } catch {
           throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID", true);
         }
-
-        return parseDouyinResponse(responseValue, now);
       } catch (error) {
         const normalized =
           error instanceof DouyinCheckError
@@ -232,18 +304,63 @@ export function createDouyinChecker({
     );
   }
 
-  return async function checkDouyinId(
-    douyinId: string,
+  async function requestByNum(
+    num: string,
     callerSignal?: AbortSignal
   ): Promise<DouyinCheckResult> {
+    const requestUrl = new URL(baseUrl);
+    requestUrl.searchParams.set("num", num);
+    return parseDouyinResponse(await requestJson(requestUrl, callerSignal), now);
+  }
+
+  async function requestBySecUid(
+    secUid: string,
+    callerSignal?: AbortSignal
+  ): Promise<DouyinCheckResult> {
+    const requestUrl = buildProfileOtherUrl(profileUrl, secUid);
+    const payload = await requestJson(requestUrl, callerSignal);
+    const result = parseDouyinResponse(payload, now);
+    return {
+      ...result,
+      secUid: result.secUid || secUid
+    };
+  }
+
+  return async function checkDouyinId(
+    douyinId: string,
+    options: DouyinCheckOptions | AbortSignal = {}
+  ): Promise<DouyinCheckResult> {
+    const normalizedOptions =
+      options instanceof AbortSignal ? { signal: options } : options;
+    const callerSignal = normalizedOptions.signal;
+    const existingSecUid = normalizedOptions.secUid?.trim() || "";
+
+    // Recheck path: prefer imdesktop profile/other when sec_uid is already known.
+    if (existingSecUid) {
+      try {
+        return await requestBySecUid(existingSecUid, callerSignal);
+      } catch (profileError) {
+        // Fall back to num check so accounts remain recheckable if profile API fails.
+        try {
+          const byNum = await requestByNum(douyinId, callerSignal);
+          return {
+            ...byNum,
+            secUid: byNum.secUid || existingSecUid
+          };
+        } catch {
+          throw profileError;
+        }
+      }
+    }
+
     // Primary path: check by Douyin unique_id (num) only.
     try {
-      return await requestCheck({ num: douyinId }, callerSignal);
+      return await requestByNum(douyinId, callerSignal);
     } catch (primaryError) {
-      // Fallback (check_tktok_num style): recover sec_uid via num, then recheck by sec_uid.
+      // Fallback: recover sec_uid via num, then recheck through profile/other.
       let resolved: DouyinCheckResult;
       try {
-        resolved = await requestCheck({ num: douyinId }, callerSignal);
+        resolved = await requestByNum(douyinId, callerSignal);
       } catch {
         throw primaryError;
       }
@@ -251,10 +368,7 @@ export function createDouyinChecker({
       if (!resolved.secUid) return resolved;
 
       try {
-        const rechecked = await requestCheck(
-          { secUid: resolved.secUid },
-          callerSignal
-        );
+        const rechecked = await requestBySecUid(resolved.secUid, callerSignal);
         return {
           ...rechecked,
           secUid: rechecked.secUid || resolved.secUid,

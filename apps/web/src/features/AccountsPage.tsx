@@ -36,9 +36,25 @@ type AccountFormValue = typeof blank;
 type AccountSubmitValue = Omit<AccountFormValue, "opSecret"> & { opSecret?: string };
 type BatchDialogState =
   | { type: "status"; value: AccountFormValue["saleStatus"] }
+  | { type: "accountStatus"; value: keyof typeof ACCOUNT_STATUS_LABELS }
   | { type: "owner"; value: string }
   | { type: "registeredRegion"; value: string }
   | { type: "remark"; value: string };
+
+type BatchRecheckResult = {
+  succeeded: Array<{ _id: string }>;
+  failed: Array<{ id: string; code: string }>;
+};
+
+function summarizeBatchRecheck(result: BatchRecheckResult, kind: "account" | "op") {
+  const label = kind === "op" ? "OP" : "账号";
+  const succeeded = result.succeeded ?? [];
+  const failed = result.failed ?? [];
+  if (!failed.length) {
+    return `已完成 ${succeeded.length} 条${label}检测`;
+  }
+  return `已完成 ${succeeded.length} 条${label}检测，失败 ${failed.length} 条，请重新检测失败项`;
+}
 
 const URL_KEYWORD_MAX_LENGTH = 1500;
 
@@ -185,8 +201,24 @@ export function AccountsPage() {
   const runBatch = async(action:"recheck"|"recheckOp"|"delete")=>{
     const ids=[...selected];if(!ids.length)return;
     if(action==="delete"&&!confirm(`确定删除选中的 ${ids.length} 条账号吗？`))return;
-    if(action==="recheck"){await runWithProgress(`正在检测 ${ids.length} 条账号…`, async()=>{await api("/api/accounts/batch-recheck",{method:"POST",body:JSON.stringify({ids})});setMessage(`已完成 ${ids.length} 条账号检测`)})}
-    if(action==="recheckOp"){await runWithProgress(`正在检测 ${ids.length} 条 OP…`, async()=>{const result=await api<{succeeded:Array<{_id:string}>;failed:Array<{id:string;code:string}>}>("/api/accounts/batch-recheck-op",{method:"POST",body:JSON.stringify({ids})});setMessage(result.failed.length?`已完成 ${result.succeeded.length} 条 OP 检测，失败 ${result.failed.length} 条`:`已完成 ${result.succeeded.length} 条 OP 检测`)})}
+    if(action==="recheck"){
+      await runWithProgress(`正在检测 ${ids.length} 条账号…`, async()=>{
+        const result=await api<BatchRecheckResult>("/api/accounts/batch-recheck",{method:"POST",body:JSON.stringify({ids})});
+        setMessage(summarizeBatchRecheck(result, "account"));
+        if((result.failed ?? []).length){
+          setSelected(new Set(result.failed.map((item)=>item.id)));
+        }
+      });
+    }
+    if(action==="recheckOp"){
+      await runWithProgress(`正在检测 ${ids.length} 条 OP…`, async()=>{
+        const result=await api<BatchRecheckResult>("/api/accounts/batch-recheck-op",{method:"POST",body:JSON.stringify({ids})});
+        setMessage(summarizeBatchRecheck(result, "op"));
+        if((result.failed ?? []).length){
+          setSelected(new Set(result.failed.map((item)=>item.id)));
+        }
+      });
+    }
     if(action==="delete"){
       await api("/api/accounts/batch-delete",{method:"POST",body:JSON.stringify({ids})});
       setMessage(`已删除 ${ids.length} 条账号`);
@@ -200,6 +232,10 @@ export function AccountsPage() {
     if(batchDialog.type==="status"){
       await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,saleStatus:batchDialog.value})});
       setMessage(`已修改 ${ids.length} 条售卖状态`);
+    }
+    if(batchDialog.type==="accountStatus"){
+      await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,accountStatus:batchDialog.value})});
+      setMessage(`已修改 ${ids.length} 条账号状态`);
     }
     if(batchDialog.type==="owner"){
       const nextOwner=batchDialog.value.trim();
@@ -286,7 +322,7 @@ export function AccountsPage() {
         {(search||saleStatus||accountStatus||owner||registeredFrom||registeredTo)&&<button onClick={()=>{setKeyword("");setUrlParams({}, {replace:true})}}>清空</button>}
         <span className="toolbar-space"/><Link className="button" to="/imports"><Upload size={16}/>导入 Excel</Link><button type="button" className="button" onClick={()=>void handleExport()}><Download size={16}/>{selected.size?`导出已选 ${selected.size} 条`:"导出数据"}</button>
       </div>
-      {selected.size>0&&<div className="batch-bar"><strong>已选择 {selected.size} 条</strong><button onClick={()=>setBatchDialog({type:"status",value:DEFAULT_ACCOUNT_SALE_STATUS})}>修改售卖状态</button><button onClick={()=>setBatchDialog({type:"owner",value:""})}>修改归属人</button><button onClick={()=>setBatchDialog({type:"registeredRegion",value:""})}>修改注册地区</button><button onClick={()=>setBatchDialog({type:"remark",value:""})}>批量备注</button><button disabled={recheckBusy} onClick={()=>runBatch("recheck")}><RefreshCw size={14}/>重新检测</button><button disabled={recheckBusy} onClick={()=>runBatch("recheckOp")}>重新检测 OP</button><button className="danger-text" onClick={()=>runBatch("delete")}><Trash2 size={14}/>删除</button></div>}
+      {selected.size>0&&<div className="batch-bar"><strong>已选择 {selected.size} 条</strong><button onClick={()=>setBatchDialog({type:"status",value:DEFAULT_ACCOUNT_SALE_STATUS})}>修改售卖状态</button><button onClick={()=>setBatchDialog({type:"accountStatus",value:"normal"})}>修改账号状态</button><button onClick={()=>setBatchDialog({type:"owner",value:""})}>修改归属人</button><button onClick={()=>setBatchDialog({type:"registeredRegion",value:""})}>修改注册地区</button><button onClick={()=>setBatchDialog({type:"remark",value:""})}>批量备注</button><button disabled={recheckBusy} onClick={()=>runBatch("recheck")}><RefreshCw size={14}/>重新检测</button><button disabled={recheckBusy} onClick={()=>runBatch("recheckOp")}>重新检测 OP</button><button className="danger-text" onClick={()=>runBatch("delete")}><Trash2 size={14}/>删除</button></div>}
       <div className="table-scroll"><table><thead><tr><th className="check-cell"><input aria-label="选择当前页" type="checkbox" checked={allChecked} onChange={()=>setSelected(allChecked?new Set():new Set(currentIds))}/></th>{["序号","抖音号","sec_uid","注册时间","OP名称","OP卡密","短 OP","项目","OP到期时间","归属人","注册地区","售卖状态","账号状态","备注","操作"].map(v=><th key={v} className={v==="序号"?"index-cell":undefined}>{v}</th>)}</tr></thead>
       <tbody>{query.isLoading?<tr><td colSpan={16} className="empty">正在加载…</td></tr>:data?.items.length?data.items.map((row,index)=><tr key={row._id}>
         <td className="check-cell"><input aria-label={`选择账号 ${row.douyinId}`} type="checkbox" checked={selected.has(row._id)} onChange={()=>setSelected((current)=>{const next=new Set(current);next.has(row._id)?next.delete(row._id):next.add(row._id);return next})}/></td><td className="index-cell">{pageSize===ACCOUNT_PAGE_SIZE_ALL?index+1:(page-1)*Number(pageSize)+index+1}</td><td>{row.douyinId}</td><td title={row.secUid || undefined}>{row.secUid ? <a className="link" href={`https://www.douyin.com/user/${row.secUid}`} target="_blank" rel="noreferrer">{row.secUid}</a> : "—"}</td><td>{row.registeredAt.slice(0,10)}</td><td>{row.opName||"—"}</td><td><button className="link" onClick={()=>reveal(row._id)}>•••••• <Eye size={14}/></button></td><td className="short-op-cell">{row.shortOpCode?<><span className="mono">{row.shortOpCode}</span><button className="link" aria-label={`复制短 OP ${row.shortOpCode}`} onClick={()=>copyText(row.shortOpCode,"短 OP 已复制")}>复制</button><button className="link" aria-label={`复制短 OP 链接 ${row.shortOpCode}`} onClick={()=>copyText(`${PUBLIC_OP_ORIGIN}/${row.shortOpCode}`,"短 OP 链接已复制")}>链接</button></>:"—"}</td><td>{OP_PROJECTS[row.opProject]?.name??"未知项目"}</td><td>{new Date(row.opExpiresAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</td><td>{row.owner}</td>
@@ -336,12 +372,14 @@ function AccountDrawer({state,owners,busy,close,submit}:{state:{mode:"create"|"e
 function BatchUpdateDialog({state,owners,close,submit,setValue}:{state:BatchDialogState;owners:string[];close():void;submit():void;setValue(value:string):void}) {
   const title = state.type==="status"
     ? "修改售卖状态"
-    : state.type==="owner"
-      ? "修改归属人"
-      : state.type==="registeredRegion"
-        ? "修改注册地区"
-        : "批量备注";
-  const confirmDisabled = state.type==="status"
+    : state.type==="accountStatus"
+      ? "修改账号状态"
+      : state.type==="owner"
+        ? "修改归属人"
+        : state.type==="registeredRegion"
+          ? "修改注册地区"
+          : "批量备注";
+  const confirmDisabled = state.type==="status" || state.type==="accountStatus"
     ? !state.value
     : state.type==="remark"
       ? false
@@ -352,11 +390,13 @@ function BatchUpdateDialog({state,owners,close,submit,setValue}:{state:BatchDial
       <div className="dialog-body">
         {state.type==="status"
           ? <label>售卖状态<select aria-label="售卖状态" value={state.value} onChange={e=>setValue(e.target.value)}>{Object.entries(SALE_STATUS_LABELS).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
-          : state.type==="owner"
-            ? <label>归属人<input aria-label="归属人" list="batch-owner-options" value={state.value} onChange={e=>setValue(e.target.value)}/><datalist id="batch-owner-options">{owners.map(value=><option key={value} value={value}/>)}</datalist></label>
-            : state.type==="registeredRegion"
-              ? <label>注册地区<input aria-label="注册地区" value={state.value} onChange={e=>setValue(e.target.value)}/></label>
-              : <label>备注<textarea aria-label="备注" value={state.value} onChange={e=>setValue(e.target.value)} maxLength={1000}/></label>}
+          : state.type==="accountStatus"
+            ? <label>账号状态<select aria-label="账号状态" value={state.value} onChange={e=>setValue(e.target.value)}>{Object.entries(ACCOUNT_STATUS_LABELS).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
+            : state.type==="owner"
+              ? <label>归属人<input aria-label="归属人" list="batch-owner-options" value={state.value} onChange={e=>setValue(e.target.value)}/><datalist id="batch-owner-options">{owners.map(value=><option key={value} value={value}/>)}</datalist></label>
+              : state.type==="registeredRegion"
+                ? <label>注册地区<input aria-label="注册地区" value={state.value} onChange={e=>setValue(e.target.value)}/></label>
+                : <label>备注<textarea aria-label="备注" value={state.value} onChange={e=>setValue(e.target.value)} maxLength={1000}/></label>}
       </div>
       <footer><button type="button" onClick={close}>取消</button><button type="button" className="primary" disabled={confirmDisabled} onClick={submit}>确定</button></footer>
     </div>

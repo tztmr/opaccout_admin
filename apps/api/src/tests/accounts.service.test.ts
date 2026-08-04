@@ -396,6 +396,22 @@ describe("accounts service", () => {
     expect(account.save).toHaveBeenCalledOnce();
   });
 
+  it("prefers existing secUid during recheck", async () => {
+    const account = accountDocument({
+      secUid: "MS4wLjABAAAA-existing-sec"
+    });
+    const findById = vi.fn(async () => account);
+    const deps = dependencies({ findById }, "violation");
+    const service = createAccountsService(deps);
+
+    const result = await service.recheck(String(account._id), context);
+
+    expect(deps.checkDouyinId).toHaveBeenCalledWith(account.douyinId, {
+      secUid: "MS4wLjABAAAA-existing-sec"
+    });
+    expect(result.accountStatus).toBe("violation");
+  });
+
   it("forces disabled when recheck detects a banned account", async () => {
     const account = accountDocument({ saleStatus: "sold" });
     const findById = vi.fn(async () => account);
@@ -426,13 +442,16 @@ describe("accounts service", () => {
     });
     const service = createAccountsService(deps);
 
+    const originalSecUid = account.secUid;
     const result = await service.recheckOp(String(account._id), context);
 
     expect(deps.cipher.decrypt).toHaveBeenCalledWith(account.opSecret);
     expect(deps.checkOpProfile).toHaveBeenCalledWith(
       "openid|token|pay|pfkey|1782303418"
     );
-    expect(deps.checkDouyinId).toHaveBeenCalledWith(account.douyinId);
+    expect(deps.checkDouyinId).toHaveBeenCalledWith(account.douyinId, {
+      secUid: originalSecUid
+    });
     expect(account.save).toHaveBeenCalledOnce();
     expect(result.opName).toBe("API新昵称");
     expect(result.accountStatus).toBe("normal");
@@ -541,6 +560,56 @@ describe("accounts service", () => {
     expect(updateMany).toHaveBeenCalledWith(
       { _id: { $in: ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"] } },
       { $set: { registeredRegion: "中国.台湾" } }
+    );
+  });
+
+  it("allows batch updates for accountStatus", async () => {
+    const countDocuments = vi.fn();
+    const updateMany = vi.fn(async () => ({ modifiedCount: 2 }));
+    const service = createAccountsService(dependencies({ countDocuments, updateMany }));
+
+    await expect(
+      service.batchUpdate(
+        ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"],
+        { accountStatus: "violation" },
+        context
+      )
+    ).resolves.toEqual({ updated: 2 });
+
+    expect(countDocuments).not.toHaveBeenCalled();
+    expect(updateMany).toHaveBeenCalledWith(
+      { _id: { $in: ["507f1f77bcf86cd799439011", "507f1f77bcf86cd799439012"] } },
+      {
+        $set: expect.objectContaining({
+          accountStatus: "violation",
+          accountCheckedAt: expect.any(Date)
+        })
+      }
+    );
+  });
+
+  it("forces saleStatus disabled when batch-setting accountStatus to banned", async () => {
+    const countDocuments = vi.fn();
+    const updateMany = vi.fn(async () => ({ modifiedCount: 1 }));
+    const service = createAccountsService(dependencies({ countDocuments, updateMany }));
+
+    await expect(
+      service.batchUpdate(
+        ["507f1f77bcf86cd799439011"],
+        { accountStatus: "banned" },
+        context
+      )
+    ).resolves.toEqual({ updated: 1 });
+
+    expect(updateMany).toHaveBeenCalledWith(
+      { _id: { $in: ["507f1f77bcf86cd799439011"] } },
+      {
+        $set: expect.objectContaining({
+          accountStatus: "banned",
+          saleStatus: "disabled",
+          accountCheckedAt: expect.any(Date)
+        })
+      }
     );
   });
 

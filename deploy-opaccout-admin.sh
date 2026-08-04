@@ -562,7 +562,7 @@ configure_env() {
   info "配置环境变量 (.env)"
 
   local current_session current_encrypt current_mongo_user current_mongo_pass current_mongo_db
-  local current_douyin_api current_qq_api current_qq_socks current_qq_app_id current_qq_timeout current_web_port current_tz current_cookie_secure
+  local current_douyin_api current_douyin_profile current_qq_api current_qq_socks current_qq_app_id current_qq_timeout current_web_port current_tz current_cookie_secure
 
   current_session="$(read_env_value "$env_file" "SESSION_SECRET")"
   current_encrypt="$(read_env_value "$env_file" "FIELD_ENCRYPTION_KEY")"
@@ -570,6 +570,7 @@ configure_env() {
   current_mongo_pass="$(read_env_value "$env_file" "MONGO_ROOT_PASSWORD")"
   current_mongo_db="$(read_env_value "$env_file" "MONGO_DATABASE")"
   current_douyin_api="$(read_env_value "$env_file" "DOUYIN_CHECK_API_URL")"
+  current_douyin_profile="$(read_env_value "$env_file" "DOUYIN_PROFILE_API_URL")"
   current_qq_api="$(read_env_value "$env_file" "QQ_OP_PROFILE_API_URL")"
   current_qq_socks="$(read_env_value "$env_file" "QQ_OP_SOCKS_PROXY_URL")"
   current_qq_app_id="$(read_env_value "$env_file" "QQ_OP_APP_ID")"
@@ -584,6 +585,7 @@ configure_env() {
   [[ -z "$current_session" ]] && current_session="$(random_alnum 48)"
   [[ -z "$current_encrypt" ]] && current_encrypt="$(random_base64_32)"
   [[ -z "$current_douyin_api" ]] && current_douyin_api="$(read_env_value "$example_file" "DOUYIN_CHECK_API_URL")"
+  [[ -z "$current_douyin_profile" ]] && current_douyin_profile="$(read_env_value "$example_file" "DOUYIN_PROFILE_API_URL")"
   [[ -z "$current_qq_api" ]] && current_qq_api="$(read_env_value "$example_file" "QQ_OP_PROFILE_API_URL")"
   [[ -z "$current_qq_socks" ]] && current_qq_socks="$(read_env_value "$example_file" "QQ_OP_SOCKS_PROXY_URL")"
   [[ -z "$current_qq_app_id" ]] && current_qq_app_id="$(read_env_value "$example_file" "QQ_OP_APP_ID")"
@@ -596,6 +598,7 @@ configure_env() {
   current_mongo_db="${current_mongo_db:-douyin_accounts}"
   current_douyin_api="${current_douyin_api:-https://unid.tztright.top/check}"
   current_qq_api="${current_qq_api:-https://graph.qq.com/user/get_simple_userinfo}"
+  current_douyin_profile="${current_douyin_profile:-https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/}"
   current_qq_socks="${current_qq_socks:-}"
   current_qq_app_id="${current_qq_app_id:-1105602870}"
   current_qq_timeout="${current_qq_timeout:-5000}"
@@ -604,7 +607,7 @@ configure_env() {
   current_cookie_secure="${current_cookie_secure:-false}"
 
   local new_mongo_user new_mongo_pass new_mongo_db new_session new_encrypt
-  local new_douyin_api new_qq_api new_qq_socks new_qq_app_id new_qq_timeout new_web_port new_tz new_cookie_secure
+  local new_douyin_api new_douyin_profile new_qq_api new_qq_socks new_qq_app_id new_qq_timeout new_web_port new_tz new_cookie_secure
 
   new_mongo_user="$(prompt_default "MongoDB 超级用户名 (MONGO_ROOT_USERNAME)" "$current_mongo_user")"
   new_mongo_pass="$(prompt_default "MongoDB 超级密码 (MONGO_ROOT_PASSWORD)" "$current_mongo_pass")"
@@ -612,6 +615,7 @@ configure_env() {
   new_session="$(prompt_default "会话密钥 (SESSION_SECRET)" "$current_session")"
   new_encrypt="$(prompt_default "字段加密密钥 Base64 (FIELD_ENCRYPTION_KEY)" "$current_encrypt")"
   new_douyin_api="$(prompt_default "抖音检测接口 (DOUYIN_CHECK_API_URL)" "$current_douyin_api")"
+  new_douyin_profile="$(prompt_default "抖音资料接口 (DOUYIN_PROFILE_API_URL)" "$current_douyin_profile")"
   new_qq_api="$(prompt_default "QQ OP 查询接口 (QQ_OP_PROFILE_API_URL)" "$current_qq_api")"
   new_qq_socks="$(prompt_default "QQ OP SOCKS 代理/代理池 (QQ_OP_SOCKS_PROXY_URL)" "$current_qq_socks")"
   new_qq_app_id="$(prompt_default "QQ OP App ID (QQ_OP_APP_ID)" "$current_qq_app_id")"
@@ -647,6 +651,7 @@ MONGO_ROOT_PASSWORD=${new_mongo_pass}
 MONGO_DATABASE=${new_mongo_db}
 
 DOUYIN_CHECK_API_URL=${new_douyin_api}
+DOUYIN_PROFILE_API_URL=${new_douyin_profile}
 QQ_OP_PROFILE_API_URL=${new_qq_api}
 QQ_OP_SOCKS_PROXY_URL=${new_qq_socks}
 QQ_OP_APP_ID=${new_qq_app_id}

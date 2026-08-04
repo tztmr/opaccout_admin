@@ -32,7 +32,10 @@ async function main() {
   );
   const cipher = createSecretCipher(config.fieldEncryptionKey);
   const publicOpService = createPublicOpService({ cipher });
-  const checkDouyinId = createDouyinChecker({ baseUrl: config.douyinCheckApiUrl });
+  const checkDouyinId = createDouyinChecker({
+    baseUrl: config.douyinCheckApiUrl,
+    profileUrl: config.douyinProfileApiUrl
+  });
   const checkOpProfile = createOpProfileChecker({
     baseUrl: config.qqOpProfileApiUrl,
     appId: config.qqOpAppId,

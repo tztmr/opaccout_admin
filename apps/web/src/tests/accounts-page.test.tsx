@@ -482,7 +482,7 @@ describe("accounts page", () => {
       }
       if (path === "/api/accounts/batch-recheck") {
         expect(init?.method).toBe("POST");
-        return json({ ok: true });
+        return json({ succeeded: [{ _id: "account-1" }], failed: [] });
       }
       throw new Error(`Unhandled request: ${path}`);
     });
@@ -639,7 +639,7 @@ describe("accounts page", () => {
 
     expect(await screen.findByRole("progressbar")).toBeInTheDocument();
 
-    batchRequest.resolve(json({ ok: true }));
+    batchRequest.resolve(json({ succeeded: [{ _id: "account-1" }, { _id: "account-2" }], failed: [] }));
     await waitFor(() => {
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     });
@@ -812,7 +812,7 @@ describe("accounts page", () => {
       expect(requestStarted).toBe(true);
     });
 
-    batchRequest.resolve(json({ ok: true }));
+    batchRequest.resolve(json({ succeeded: [{ _id: "account-1" }, { _id: "account-2" }], failed: [] }));
     await waitFor(() => {
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     });
@@ -879,6 +879,220 @@ describe("accounts page", () => {
         expect.objectContaining({ method: "POST" })
       );
     });
+  });
+
+  it("opens a batch accountStatus dialog and submits the update", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-update") {
+        expect(init?.method).toBe("POST");
+        expect(JSON.parse(String(init?.body))).toEqual({
+          ids: ["account-1"],
+          accountStatus: "violation"
+        });
+        return json({ updated: 1 });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "选择账号 94946893573" })
+    );
+    await user.click(screen.getByRole("button", { name: "修改账号状态" }));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole("combobox", { name: "账号状态" }), "violation");
+    await user.click(screen.getByRole("button", { name: "确定" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/accounts/batch-update",
+        expect.objectContaining({ method: "POST" })
+      );
+    });
+    expect(await screen.findByText(/已修改 1 条账号状态/)).toBeInTheDocument();
+  });
+
+  it("shows failed batch recheck count and keeps only failed accounts selected", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            },
+            {
+              _id: "account-2",
+              douyinId: "93180119509",
+              secUid: "MS4wLjABAAAA-fixture-2",
+              registeredAt: "2026-07-02T00:00:00.000Z",
+              opName: "API昵称2",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 2,
+          totalPages: 1,
+          stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck") {
+        expect(init?.method).toBe("POST");
+        return json({
+          succeeded: [{ _id: "account-1" }],
+          failed: [{ id: "account-2", code: "RECHECK_FAILED" }]
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(await screen.findByRole("checkbox", { name: "选择账号 94946893573" }));
+    await user.click(screen.getByRole("checkbox", { name: "选择账号 93180119509" }));
+    await user.click(
+      within(screen.getByText(/已选择 2 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测" })
+    );
+
+    expect(await screen.findByText(/已完成 1 条账号检测，失败 1 条，请重新检测失败项/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "选择账号 93180119509" })).toBeChecked();
+    expect(screen.getByText(/已选择 1 条/)).toBeInTheDocument();
+  });
+
+  it("shows failed batch OP recheck count and keeps only failed accounts selected", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            },
+            {
+              _id: "account-2",
+              douyinId: "93180119509",
+              secUid: "MS4wLjABAAAA-fixture-2",
+              registeredAt: "2026-07-02T00:00:00.000Z",
+              opName: "API昵称2",
+              hasOpSecret: true,
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 2,
+          totalPages: 1,
+          stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck-op") {
+        expect(init?.method).toBe("POST");
+        return json({
+          succeeded: [{ _id: "account-1" }],
+          failed: [{ id: "account-2", code: "OP_RECHECK_FAILED" }]
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(await screen.findByRole("checkbox", { name: "选择账号 94946893573" }));
+    await user.click(screen.getByRole("checkbox", { name: "选择账号 93180119509" }));
+    await user.click(
+      within(screen.getByText(/已选择 2 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测 OP" })
+    );
+
+    expect(await screen.findByText(/已完成 1 条OP检测，失败 1 条，请重新检测失败项/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "选择账号 93180119509" })).toBeChecked();
+    expect(screen.getByText(/已选择 1 条/)).toBeInTheDocument();
   });
 
   it("opens a batch remark dialog and submits the remark update", async () => {

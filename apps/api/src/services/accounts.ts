@@ -5,6 +5,7 @@ import {
   type AccountInput,
   type AccountListQuery,
   type AccountStats,
+  type AccountStatus,
   DEFAULT_OP_PROJECT,
   DEFAULT_REGISTERED_REGION,
   type PagedResponse,
@@ -14,7 +15,7 @@ import { Types, type Model } from "mongoose";
 import { AccountModel, type AccountRecord } from "../models/account";
 import { AppError } from "../middleware/errors";
 import type { SecretCipher } from "./encryption";
-import type { DouyinCheckResult } from "./douyin-check";
+import type { DouyinCheckOptions, DouyinCheckResult } from "./douyin-check";
 import { calculateOpExpiry } from "./op-expiry";
 import type { OpProfileCheckResult } from "./op-profile";
 import {
@@ -50,7 +51,10 @@ type AuditService = {
 
 type AccountServiceDependencies = {
   model?: Model<AccountRecord>;
-  checkDouyinId(douyinId: string): Promise<DouyinCheckResult>;
+  checkDouyinId(
+    douyinId: string,
+    options?: DouyinCheckOptions
+  ): Promise<DouyinCheckResult>;
   checkOpProfile(opSecret: string): Promise<OpProfileCheckResult>;
   cipher: SecretCipher;
   audit: AuditService;
@@ -129,14 +133,19 @@ function duplicateError(error: unknown): AppError | undefined {
 
 async function detectDouyinStatus(
   checkDouyinId: AccountServiceDependencies["checkDouyinId"],
-  douyinId: string
+  douyinId: string,
+  options: DouyinCheckOptions = {}
 ) {
   try {
+    const secUid = options.secUid?.trim();
+    if (secUid) {
+      return await checkDouyinId(douyinId, { ...options, secUid });
+    }
     return await checkDouyinId(douyinId);
   } catch (error) {
     if (error instanceof DouyinCheckError) {
       return {
-        secUid: "",
+        secUid: options.secUid?.trim() || "",
         accountStatus: "unknown" as const,
         checkedAt: new Date()
       };
@@ -382,7 +391,9 @@ export function createAccountsService({
 
       // OP检测成功后，若此前因 token 失效被标记为 op_invalid，需要恢复真实抖音状态。
       if (account.accountStatus === "op_invalid" && opResult.kind !== "message") {
-        const detected = await detectDouyinStatus(checkDouyinId, account.douyinId);
+        const detected = await detectDouyinStatus(checkDouyinId, account.douyinId, {
+          secUid: account.secUid
+        });
         account.secUid = detected.secUid || account.secUid;
         account.accountCheckedAt = detected.checkedAt;
         baseAccountStatus = detected.accountStatus;
@@ -427,6 +438,7 @@ export function createAccountsService({
       ids: string[],
       patch: {
         saleStatus?: SaleStatus;
+        accountStatus?: AccountStatus;
         owner?: string;
         registeredRegion?: string;
         remark?: string;
@@ -436,6 +448,14 @@ export function createAccountsService({
       if (!ids.length || ids.length > 500) throw new AppError(400, "BATCH_IDS_INVALID", "请选择 1 至 500 条数据");
       const allowedPatch: Record<string, unknown> = {};
       if (patch.saleStatus) allowedPatch.saleStatus = patch.saleStatus;
+      if (patch.accountStatus) {
+        allowedPatch.accountStatus = patch.accountStatus;
+        allowedPatch.accountCheckedAt = new Date();
+        if (patch.accountStatus === "banned") {
+          // Keep banned accounts locked to 已停用 even if a saleStatus was also sent.
+          allowedPatch.saleStatus = "disabled";
+        }
+      }
       if (patch.owner?.trim()) allowedPatch.owner = patch.owner.trim();
       if (patch.registeredRegion?.trim()) {
         allowedPatch.registeredRegion = patch.registeredRegion.trim();
@@ -444,16 +464,21 @@ export function createAccountsService({
         allowedPatch.remark = patch.remark?.trim() ?? "";
       }
       if (!Object.keys(allowedPatch).length) throw new AppError(400, "BATCH_PATCH_EMPTY", "没有可修改的字段");
-      if (patch.saleStatus && patch.saleStatus !== "disabled") {
-        const lockedCount = await model.countDocuments({
-          _id: { $in: ids },
-          accountStatus: "banned"
-        });
-        if (lockedCount > 0) {
+      const effectiveSaleStatus =
+        (allowedPatch.saleStatus as SaleStatus | undefined) ?? patch.saleStatus;
+      if (effectiveSaleStatus && effectiveSaleStatus !== "disabled") {
+        // If we are not changing accountStatus away from banned, keep the lock.
+        const remainingBanned = patch.accountStatus && patch.accountStatus !== "banned"
+          ? 0
+          : await model.countDocuments({
+              _id: { $in: ids },
+              accountStatus: "banned"
+            });
+        if (remainingBanned > 0) {
           throw new AppError(
             409,
             "BANNED_ACCOUNT_SALE_STATUS_LOCKED",
-            `${lockedCount} 个封禁账号的售卖状态必须保持为已停用`
+            `${remainingBanned} 个封禁账号的售卖状态必须保持为已停用`
           );
         }
       }
@@ -465,7 +490,9 @@ export function createAccountsService({
     async recheck(id: string, context: AuditContext): Promise<AccountDto> {
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
-      const detected = await detectDouyinStatus(checkDouyinId, account.douyinId);
+      const detected = await detectDouyinStatus(checkDouyinId, account.douyinId, {
+        secUid: account.secUid
+      });
       account.secUid = detected.secUid || account.secUid;
       // recheck only refreshes Douyin-derived status; keep OP失效 until OP is revalidated on create/import
       if (account.accountStatus !== "op_invalid") {
