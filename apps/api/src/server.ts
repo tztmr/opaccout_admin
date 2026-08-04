@@ -18,6 +18,7 @@ import { parseSocksProxyPool } from "./services/socks-fetch";
 import { createSocksFetch } from "./services/socks-fetch";
 import { normalizeBannedSaleStatuses } from "./services/sale-status-policy";
 import { backfillMissingShortOps } from "./services/short-op-code";
+import { createPublicOpService } from "./services/public-op";
 
 async function main() {
   const config = loadConfig(process.env);
@@ -30,6 +31,7 @@ async function main() {
     { $set: { status: "queued" }, $unset: { startedAt: 1 } }
   );
   const cipher = createSecretCipher(config.fieldEncryptionKey);
+  const publicOpService = createPublicOpService({ cipher });
   const checkDouyinId = createDouyinChecker({ baseUrl: config.douyinCheckApiUrl });
   const checkOpProfile = createOpProfileChecker({
     baseUrl: config.qqOpProfileApiUrl,
@@ -67,6 +69,7 @@ async function main() {
     sessionStore,
     accountService: accounts,
     cipher,
+    publicOpService,
     audit: auditService,
     isReady: () => mongoose.connection.readyState === 1
   });

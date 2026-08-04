@@ -1,10 +1,32 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { createApp } from "../app";
+import type { PublicOpService } from "../services/public-op";
 import { createTestAdminAuth } from "./admin-test-helper";
 import { testConfig } from "./test-config";
 
 describe("application security", () => {
+  it("keeps the public short OP API outside the administrator authentication boundary", async () => {
+    const adminAuth = await createTestAdminAuth();
+    const publicOpService: PublicOpService = {
+      resolve: async () => ({
+        status: "success" as const,
+        code: "123456789",
+        opData: "openid|access|pay",
+        project: { key: "douyin", name: "抖音", appId: "1105602870" },
+        expiresAt: "2026-08-23T12:16:58.000Z",
+        wakeUrl: "tencent1105602870://qzapp/mqzone/0"
+      })
+    };
+    const app = createApp({ config: testConfig, adminAuth, ...{ publicOpService } });
+
+    const response = await request(app)
+      .post("/api/op/resolve")
+      .send({ code: "123456789" });
+
+    expect(response.status).toBe(200);
+  });
+
   it("protects management APIs", async () => {
     const adminAuth = await createTestAdminAuth();
     const response = await request(createApp({ config: testConfig, adminAuth })).get(

@@ -15,6 +15,8 @@ import { createSettingsRouter } from "./routes/settings";
 import { createImportsRouter } from "./routes/imports";
 import { createExportsRouter } from "./routes/exports";
 import type { SecretCipher } from "./services/encryption";
+import { createPublicOpRouter } from "./routes/public-op";
+import type { PublicOpService } from "./services/public-op";
 
 type CreateAppOptions = {
   config: AppConfig;
@@ -22,6 +24,7 @@ type CreateAppOptions = {
   sessionStore?: Store;
   accountService?: AccountsService;
   cipher?: SecretCipher;
+  publicOpService?: PublicOpService;
   audit?: Parameters<typeof createExportsRouter>[1];
   isReady?: () => boolean;
 };
@@ -32,6 +35,7 @@ export function createApp({
   sessionStore,
   accountService,
   cipher,
+  publicOpService,
   audit,
   isReady = () => true
 }: CreateAppOptions): Express {
@@ -43,6 +47,10 @@ export function createApp({
       contentSecurityPolicy: false
     })
   );
+  app.use("/api/op/resolve", (_req, res, next) => {
+    res.setHeader("Cache-Control", "no-store");
+    next();
+  });
   app.use(express.json({ limit: "1mb" }));
   app.use(
     session({
@@ -62,6 +70,7 @@ export function createApp({
 
   app.use("/api/health", createHealthRouter(isReady));
   app.use("/api/auth", createAuthRouter(config, adminAuth));
+  if (publicOpService) app.use("/api/op", createPublicOpRouter(publicOpService));
   if (accountService) {
     app.use("/api/accounts", requireAdmin, createAccountsRouter(accountService));
   }
