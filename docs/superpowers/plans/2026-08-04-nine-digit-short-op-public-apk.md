@@ -4,7 +4,7 @@
 
 **Goal:** 给当前账号表增加唯一 9 位短 OP 和默认抖音项目，通过独立公开域名、开放 API 与 Android APK 完成网页及游戏授权上号。
 
-**Architecture:** 账号主表继续作为唯一数据源，API 负责短码生成、现有数据迁移、OP 解密和唤醒 URL 编码。公开 React 页面部署到 `op.tztright.qzz.io` 并跨域调用 `tkacc.tztright.top` 的解析接口；APK 使用同一接口处理短码，同时保留完整 OP 的离线回调流程。外层 Nginx 和部署脚本为后台/API 与公开页面维护独立主机配置和证书。
+**Architecture:** 账号主表继续作为唯一数据源，API 负责短码生成、现有数据迁移、OP 解密和唤醒 URL 编码。公开 React 页面和精确的短 OP 解析 API 统一通过 `op.tztright.qzz.io` 提供；APK 使用同一公开域名处理短码，同时保留完整 OP 的离线回调流程。外层 Nginx 和部署脚本为后台域名与公开 OP 域名维护独立主机配置和证书。
 
 **Tech Stack:** pnpm 11、TypeScript 5.8、React 19、React Router 7、Express 5、Mongoose 8/MongoDB 8、Vitest 3、Nginx、Certbot、Android Gradle/Java 17。
 
@@ -14,9 +14,9 @@
 - 短码必须匹配 `^[1-9][0-9]{8}$`，由服务端生成且不可由新增、编辑或导入请求指定。
 - 默认项目固定为抖音，项目键 `douyin`，AppID `1105602870`。
 - 后台/API 域名为 `https://tkacc.tztright.top`；公开页面域名为 `https://op.tztright.qzz.io`。
-- 公开解析 API 为 `POST https://tkacc.tztright.top/api/op/resolve`，无需管理员登录，但必须限流、禁止缓存并只允许公开页面域名跨域调用。
+- 公开解析 API 为 `POST https://op.tztright.qzz.io/api/op/resolve`，无需管理员登录，但必须限流、禁止缓存，并与公开页面保持同源。
 - 公开网页不得显示、复制、持久缓存或记录完整 OP；API 为 APK 游戏回调返回 `opData`。
-- APK 默认 API 基址为 `https://tkacc.tztright.top`，完整 OP 模式离线可用，9 位短 OP 模式必须联网。
+- APK 默认 API 基址为 `https://op.tztright.qzz.io`，完整 OP 模式离线可用，9 位短 OP 模式必须联网。
 - 保留现有完整 OP 加密、抖音检测、OP 检测、导入导出、批量操作和管理员权限行为。
 - 不新增独立短 OP 表、短 OP 管理页面或项目管理页面。
 - 不覆盖无关的用户修改；每次暂存前检查 `git status --short` 和 `git diff --check`。
@@ -32,12 +32,12 @@
 - `apps/api/src/services/short-op-code.ts`：安全随机短码、创建冲突重试和现有账号幂等补齐。
 - `apps/api/src/services/op-wake-url.ts`：解析完整 OP、生成二进制 plist 和项目唤醒 URL。
 - `apps/api/src/services/public-op.ts`：按短码解析账号、解密 OP、校验状态/到期时间并生成公共响应。
-- `apps/api/src/routes/public-op.ts`：公开 CORS、限流、`no-store` 和解析接口。
+- `apps/api/src/routes/public-op.ts`：公开限流、`no-store` 和解析接口。
 - `apps/api/src/tests/short-op-code.test.ts`：生成、冲突重试与迁移测试。
 - `apps/api/src/tests/op-wake-url.test.ts`：OP 字段和唤醒 URL 编码测试。
-- `apps/api/src/tests/public-op.routes.test.ts`：公开 API、CORS、限流与敏感错误测试。
+- `apps/api/src/tests/public-op.routes.test.ts`：公开 API、限流、无缓存与敏感错误测试。
 - `apps/web/src/features/ShortOpPage.tsx`：公开短 OP 输入、路径预填、API 调用和唤醒恢复。
-- `apps/web/src/features/public-op-routing.ts`：可信主机判断、规范链接和 API 地址选择。
+- `apps/web/src/features/public-op-routing.ts`：可信主机判断、规范链接和同源 API 路径。
 - `apps/web/src/tests/short-op-page.test.tsx`：公开页面交互和路由隔离测试。
 - `test/deploy-dual-domain.test.mjs`：静态验证部署脚本双域名/Nginx/Certbot 输出。
 - `android-app/`：Android Gradle 工程、原生页面、授权回调、API 客户端、唤醒编码和单元测试。
@@ -49,7 +49,7 @@
 - `apps/api/src/models/account.ts`：Mongo 字段、唯一部分索引和搜索文本。
 - `apps/api/src/services/accounts.ts`：新增账号分配短码、DTO/更新保留项目与短码。
 - `apps/api/src/services/import-parser.ts`、`apps/api/src/services/exporter.ts`：项目导入和短码/项目导出。
-- `apps/api/src/config.ts`、`apps/api/src/app.ts`、`apps/api/src/server.ts`、`.env.example`、`docker-compose.yml`：公开来源配置、路由装配和启动迁移。
+- `apps/api/src/app.ts`、`apps/api/src/server.ts`：公开路由装配和启动迁移。
 - `apps/api/src/tests/*.test.ts`：模型、账号、导入、导出、配置和安全回归覆盖。
 - `apps/web/src/app/App.tsx`、`apps/web/src/features/AccountsPage.tsx`、`apps/web/src/styles.css`：双主机入口、公开页与账号表两列。
 - `apps/web/src/tests/auth-bootstrap.test.tsx`、`apps/web/src/tests/accounts-page.test.tsx`、`apps/web/src/tests/styles.test.ts`：路由、表格和响应式样式覆盖。
@@ -68,7 +68,7 @@
 - Test: `packages/shared/src/account.test.ts`
 
 **Interfaces:**
-- Produces: `ShortOpCodeSchema`、`OpProjectSchema`、`OP_PROJECTS`、`DEFAULT_OP_PROJECT`、`PUBLIC_OP_ORIGIN`、`ADMIN_API_ORIGIN`、`PublicOpResolveRequestSchema`、`PublicOpResolveResponse`。
+- Produces: `ShortOpCodeSchema`、`OpProjectSchema`、`OP_PROJECTS`、`DEFAULT_OP_PROJECT`、`PUBLIC_OP_ORIGIN`、`PUBLIC_OP_API_URL`、`PublicOpResolveRequestSchema`、`PublicOpResolveResponse`。
 - Produces: `AccountInput.opProject`、`AccountDto.shortOpCode`、`AccountDto.opProject`。
 - Consumes: 现有 Zod 4 和账号输入/DTO 模式。
 
@@ -98,8 +98,8 @@ export const OP_PROJECTS = {
 } as const;
 export const OpProjectSchema = z.enum(["douyin"]);
 export const DEFAULT_OP_PROJECT = "douyin" as const;
-export const ADMIN_API_ORIGIN = "https://tkacc.tztright.top";
 export const PUBLIC_OP_ORIGIN = "https://op.tztright.qzz.io";
+export const PUBLIC_OP_API_URL = `${PUBLIC_OP_ORIGIN}/api/op/resolve`;
 export const PublicOpResolveRequestSchema = z.object({ code: ShortOpCodeSchema }).strict();
 export type PublicOpResolveResponse = {
   status: "success";
@@ -431,24 +431,20 @@ git commit -m "feat: encode OP project wake URLs"
 
 ---
 
-### Task 6: 公开解析服务、CORS、限流与无缓存 API
+### Task 6: 公开解析服务、限流与无缓存 API
 
 **Files:**
 - Create: `apps/api/src/services/public-op.ts`
 - Create: `apps/api/src/routes/public-op.ts`
 - Create: `apps/api/src/tests/public-op.routes.test.ts`
-- Modify: `apps/api/src/config.ts`
 - Modify: `apps/api/src/app.ts`
 - Modify: `apps/api/src/server.ts`
-- Modify: `.env.example`
-- Modify: `docker-compose.yml`
-- Modify: `apps/api/src/tests/config.test.ts`
 - Modify: `apps/api/src/tests/app-security.test.ts`
 
 **Interfaces:**
 - Consumes: `PublicOpResolveRequestSchema`、`OP_PROJECTS`、`SecretCipher`、`buildOpWakeUrl()` 和 `AccountModel`。
 - Produces: `createPublicOpService(options)`，返回 `PublicOpService.resolve(code): Promise<PublicOpResolveResponse | null>`。
-- Produces HTTP: `OPTIONS/POST /api/op/resolve`，公开、每 IP 每分钟 30 次、允许来源 `https://op.tztright.qzz.io`。
+- Produces HTTP: `POST /api/op/resolve`，由公开域名精确代理，无需登录，每 IP 每分钟最多 30 次。
 
 - [ ] **Step 1: 写公开接口失败测试**
 
@@ -459,32 +455,21 @@ await request(app).post("/api/op/resolve").send({ code: "123456789" }).expect(40
 });
 const success = await request(app)
   .post("/api/op/resolve")
-  .set("Origin", "https://op.tztright.qzz.io")
   .send({ code: "123456789" })
   .expect("Cache-Control", "no-store")
-  .expect("Access-Control-Allow-Origin", "https://op.tztright.qzz.io")
   .expect(200);
 expect(success.body).toMatchObject({ status: "success", opData: fixtureOp, project: { key: "douyin" } });
-await request(app).options("/api/op/resolve").set("Origin", "https://evil.example").expect(403);
 ```
 
 另覆盖过期、`op_invalid`、解密失败、未知项目、同 IP 第 31 次请求为 429，以及错误日志不包含 fixture OP。
 
 - [ ] **Step 2: 运行公开接口测试并确认失败**
 
-Run: `pnpm --filter @douyin-admin/api test -- src/tests/public-op.routes.test.ts src/tests/config.test.ts src/tests/app-security.test.ts`
+Run: `pnpm --filter @douyin-admin/api test -- src/tests/public-op.routes.test.ts src/tests/app-security.test.ts`
 
-Expected: FAIL，路由返回 404 或配置字段不存在。
+Expected: FAIL，路由返回 404。
 
 - [ ] **Step 3: 实现解析服务与路由**
-
-配置 schema 增加精确来源，并传入应用装配：
-
-```ts
-PUBLIC_OP_ORIGIN: z.url().default("https://op.tztright.qzz.io")
-```
-
-`.env.example` 增加 `PUBLIC_OP_ORIGIN=https://op.tztright.qzz.io`，Docker API 环境透传 `${PUBLIC_OP_ORIGIN:-https://op.tztright.qzz.io}`。
 
 ```ts
 export function createPublicOpService({
@@ -514,7 +499,7 @@ export function createPublicOpService({
 }
 ```
 
-路由在 `requireAdmin` 之前挂载。只对该路由手工设置精确 CORS 头；无 `Origin` 的 APK 请求允许通过，其他浏览器 Origin 返回 403。使用已安装的 `express-rate-limit`：
+路由在 `requireAdmin` 之前挂载。使用已安装的 `express-rate-limit`：
 
 ```ts
 rateLimit({ windowMs: 60_000, limit: 30, standardHeaders: true, legacyHeaders: false });
@@ -531,7 +516,7 @@ Expected: PASS，现有鉴权 API 不受影响。
 - [ ] **Step 5: 提交公开 API**
 
 ```bash
-git add .env.example docker-compose.yml apps/api/src/config.ts apps/api/src/app.ts apps/api/src/server.ts apps/api/src/routes/public-op.ts apps/api/src/services/public-op.ts apps/api/src/tests
+git add apps/api/src/app.ts apps/api/src/server.ts apps/api/src/routes/public-op.ts apps/api/src/services/public-op.ts apps/api/src/tests
 git commit -m "feat: expose rate-limited short OP API"
 ```
 
@@ -548,7 +533,7 @@ git commit -m "feat: expose rate-limited short OP API"
 - Modify: `apps/web/src/styles.css`
 
 **Interfaces:**
-- Consumes: `ADMIN_API_ORIGIN`、`PUBLIC_OP_ORIGIN`、`PublicOpResolveResponse`。
+- Consumes: `PUBLIC_OP_ORIGIN`、`PUBLIC_OP_API_URL`、`PublicOpResolveResponse`。
 - Produces: `isPublicOpHost(hostname)`、`publicOpApiUrl(hostname)`、`extractPublicShortCode(pathname)` 和 `ShortOpPage`。
 
 - [ ] **Step 1: 写路由与页面失败测试**
@@ -560,7 +545,7 @@ expect(extractPublicShortCode("/123456789")).toBe("123456789");
 render(<ShortOpPage pathname="/123456789" hostname="op.tztright.qzz.io" />);
 expect(screen.getByLabelText("9 位短 OP")).toHaveValue("123456789");
 await user.click(screen.getByRole("button", { name: "立即上号" }));
-expect(fetch).toHaveBeenCalledWith("https://tkacc.tztright.top/api/op/resolve", expect.any(Object));
+expect(fetch).toHaveBeenCalledWith("/api/op/resolve", expect.any(Object));
 ```
 
 路由测试分别模拟两个 hostname，断言公开主机根路径不请求 `/api/auth/session`，后台主机根路径进入 `/login`，公开主机不能进入 `/accounts`。
@@ -602,7 +587,7 @@ function AdminRoutes() {
 }
 ```
 
-本地开发 hostname 使用相对 `/api/op/resolve`，并保留 `/op` 路由用于 QA；生产公开 hostname 使用绝对后台 API 地址。提交按钮期间禁用，失败恢复；成功后用 `window.location.assign(result.wakeUrl)`，1.5 秒未离页则恢复按钮和提示。
+公开页面和本地开发都使用同源相对地址 `/api/op/resolve`，并保留 `/op` 路由用于 QA。`PUBLIC_OP_API_URL` 用于文档、APK 构建断言和规范地址测试，不用于浏览器跨域请求。提交按钮期间禁用，失败恢复；成功后用 `window.location.assign(result.wakeUrl)`，1.5 秒未离页则恢复按钮和提示。
 
 - [ ] **Step 4: 运行页面测试、类型检查与构建**
 
@@ -704,7 +689,7 @@ assert.match(script, /certbot --nginx -d "\$OP_PUBLIC_DOMAIN"/);
 assert.match(script, /return 302 https:\/\/\$\{OP_PUBLIC_DOMAIN\}/);
 ```
 
-测试同时断言状态保存含两个域名、读取旧 `DOMAIN` 时赋给 `ADMIN_DOMAIN`、公开主机配置不包含通用 `location /api/` 代理。
+测试同时断言状态保存含两个域名、读取旧 `DOMAIN` 时赋给 `ADMIN_DOMAIN`、公开主机只精确代理 `location = /api/op/resolve` 且拒绝其他 `/api/` 路径。
 
 - [ ] **Step 2: 运行部署脚本测试并确认失败**
 
@@ -723,14 +708,14 @@ if [[ -z "${ADMIN_DOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
 fi
 ```
 
-后台 Nginx 主机代理完整 Web/API，并为 `/op` 与 `/op/<9位码>` 返回公开域名重定向。公开主机只允许 `/`、9 位路径、兼容 `/op` 路径和 `/assets/`，其余返回 404；不代理 `/api/`。分别执行：
+后台 Nginx 主机代理完整 Web/API，并为 `/op` 与 `/op/<9位码>` 返回公开域名重定向。公开主机允许 `/`、9 位路径、兼容 `/op` 路径、`/assets/`，并把精确的 `/api/op/resolve` 代理到同一 Web/API 上游；其他 `/api/` 路径直接返回 404。分别执行：
 
 ```bash
 run_root certbot --nginx -d "$ADMIN_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive
 run_root certbot --nginx -d "$OP_PUBLIC_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive
 ```
 
-每次证书调用单独记录结果；一张失败时保留另一张成功状态并返回非零。状态输出和 README 列出后台、API、公开页面、分享链接与 DNS 前置条件。
+每次证书调用单独记录结果；一张失败时保留另一张成功状态并返回非零。状态输出和 README 明确列出后台 `https://tkacc.tztright.top/login`、开放 API `https://op.tztright.qzz.io/api/op/resolve`、公开页面、分享链接与 DNS 前置条件。
 
 - [ ] **Step 4: 运行脚本静态测试和语法检查**
 
@@ -859,7 +844,7 @@ Expected: FAIL，API 客户端和输入判断不存在。
 
 ```gradle
 def opApiBaseUrl = providers.gradleProperty("opApiBaseUrl")
-    .getOrElse("https://tkacc.tztright.top")
+    .getOrElse("https://op.tztright.qzz.io")
 android.defaultConfig.buildConfigField "String", "OP_API_BASE_URL", "\"${opApiBaseUrl}\""
 ```
 
@@ -867,7 +852,7 @@ Manifest 增加 `android.permission.INTERNET`，并设置 `android:usesCleartext
 
 - [ ] **Step 4: 运行 Android 测试与双配置构建**
 
-Run: `cd android-app && ./gradlew --offline testDebugUnitTest assembleDebug -PopApiBaseUrl=https://tkacc.tztright.top`
+Run: `cd android-app && ./gradlew --offline testDebugUnitTest assembleDebug -PopApiBaseUrl=https://op.tztright.qzz.io`
 
 Expected: PASS，APK 内默认/覆盖地址均为 HTTPS。
 

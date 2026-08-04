@@ -6,8 +6,8 @@
 
 - 每条账号记录拥有一个服务端生成的唯一 9 位数字短 OP。
 - 账号记录拥有项目字段，首版只内置抖音，默认 AppID 为 `1105602870`。
-- 后台与开放 API 继续部署在 `https://tkacc.tztright.top`，根地址恢复进入后台登录页。
-- 只有公开短 OP 页面部署在 `https://op.tztright.qzz.io`，根地址直接显示输入页。
+- 后台及现有管理 API 继续部署在 `https://tkacc.tztright.top`，根地址恢复进入后台登录页。
+- 公开短 OP 页面和短 OP 开放 API 部署在 `https://op.tztright.qzz.io`，根地址直接显示输入页。
 - `https://op.tztright.qzz.io/{code}` 提供带短码的分享入口。
 - 网页与 APK 共用无需后台登录的短 OP 解析 API。
 - APK 同时支持完整 OP 离线模式和 9 位短 OP 联网模式。
@@ -98,10 +98,10 @@ React 路由根据受信任的主机名区分入口：后台域名的根路径�
 
 ### 7.1 接口
 
-生产地址仍属于后台/API 域名：
+生产规范地址属于公开 OP 域名：
 
 ```text
-POST https://tkacc.tztright.top/api/op/resolve
+POST https://op.tztright.qzz.io/api/op/resolve
 ```
 
 请求：
@@ -155,11 +155,11 @@ POST https://tkacc.tztright.top/api/op/resolve
 ### 7.3 开放与防护
 
 - API 和页面无需管理员登录。
-- 公共网页跨域调用 `https://tkacc.tztright.top/api/op/resolve`；该路由只允许来源 `https://op.tztright.qzz.io`，并正确响应 JSON POST 的 CORS 预检请求。
-- APK 请求通常不带浏览器 `Origin`，不依赖 CORS，但仍受格式校验和 IP 限流约束。
+- 公共网页同源调用 `https://op.tztright.qzz.io/api/op/resolve`，不依赖跨域授权。
+- APK 使用同一公开域名和接口，仍受格式校验和 IP 限流约束。
 - 按客户端 IP 执行固定窗口限流，默认每分钟最多 30 次解析请求。
 - Nginx 正确传递来源 IP，API 只信任受控反向代理链。
-- 开放 API 只通过 `https://tkacc.tztright.top` 对外提供，公开页面只通过 `https://op.tztright.qzz.io` 对外提供。
+- 公开 OP 域名只向 API 容器代理精确路径 `/api/op/resolve`；不得代理登录、账号、导入、导出、设置或其他后台 API。
 - 响应设置 `Cache-Control: no-store`，避免代理或浏览器缓存凭证。
 - 不提供按短码查询账号资料、抖音号、归属人或备注的接口。
 
@@ -186,7 +186,7 @@ POST https://tkacc.tztright.top/api/op/resolve
 
 ### 8.3 网络配置
 
-- 默认 API 基址固定为 `https://tkacc.tztright.top`。
+- 默认 API 基址固定为 `https://op.tztright.qzz.io`。
 - 调试构建允许通过 Gradle 属性覆盖 API 基址，正式构建默认值保持生产域名。
 - Manifest 增加互联网权限。
 - 正式构建拒绝明文 HTTP，网络请求设置连接与读取超时。
@@ -210,8 +210,8 @@ POST https://tkacc.tztright.top/api/op/resolve
 
 现有 `deploy-opaccout-admin.sh` 只保存一个 `DOMAIN`、写一份 Nginx 配置并申请一张单域名证书，不能表达本次页面与 API 分域部署。脚本调整为：
 
-- `ADMIN_DOMAIN`：默认 `tkacc.tztright.top`，承载后台和 `/api/`。
-- `OP_PUBLIC_DOMAIN`：默认 `op.tztright.qzz.io`，只承载公开短 OP 页面。
+- `ADMIN_DOMAIN`：默认 `tkacc.tztright.top`，承载后台和管理 API。
+- `OP_PUBLIC_DOMAIN`：默认 `op.tztright.qzz.io`，承载公开短 OP 页面和精确的 `/api/op/resolve` 代理。
 - 读取旧部署状态中的 `DOMAIN` 时将其迁移为 `ADMIN_DOMAIN`，避免现有安装失去后台域名配置。
 - 配置 HTTPS 前分别检查两个域名的 DNS；提示中明确哪个域名未解析。
 - 为两个域名写入独立 Nginx `server` 配置，不能让公开域名透传后台页面或全部 API。
@@ -225,7 +225,7 @@ POST https://tkacc.tztright.top/api/op/resolve
 | 用途 | 地址 |
 | --- | --- |
 | 后台入口 | `https://tkacc.tztright.top/login` |
-| 开放 API | `https://tkacc.tztright.top/api/op/resolve` |
+| 开放 API | `https://op.tztright.qzz.io/api/op/resolve` |
 | 公开短 OP 页面 | `https://op.tztright.qzz.io/` |
 | 短码分享链接 | `https://op.tztright.qzz.io/{code}` |
 
@@ -246,7 +246,7 @@ POST https://tkacc.tztright.top/api/op/resolve
 - `https://tkacc.tztright.top/op` 及其短码路径会保留短码并跳转到公开 OP 域名。
 - 未登录访问 `https://op.tztright.qzz.io/` 和 `/:code` 不跳转 `/login`。
 - 公开 OP 域名不能进入 `/login`、`/setup` 或 `/accounts`。
-- 验证公开页面到后台 API 的 CORS 预检和实际 POST 请求。
+- 验证公开页面同源调用 `/api/op/resolve`，并确认公开域名无法访问其他 API。
 - 手机与桌面尺寸下检查公开输入页和新增两列后的账号表实际渲染。
 - 验证复制短码、复制分享链接、路径预填、成功唤醒和失败恢复按钮状态。
 
@@ -264,7 +264,7 @@ POST https://tkacc.tztright.top/api/op/resolve
 - 运行 Android 单元测试和 `assembleDebug`。
 - 构建 Docker Web/API 镜像并执行健康检查。
 - 部署脚本分别检查 `tkacc.tztright.top` 与 `op.tztright.qzz.io` 的 DNS，写入独立 Nginx `server_name` 配置，并分别用 Certbot 申请或更新证书。
-- 后台域名代理完整 Web/API；公开 OP 域名只代理公开页面与静态资源，不在该域名反向代理后台 API。
-- HTTPS 配置成功后验证后台登录入口、公开页面、短码路径、API 健康检查和 CORS 响应；脚本输出两个最终访问地址。
+- 后台域名代理完整 Web/API；公开 OP 域名只代理公开页面、静态资源和精确的 `/api/op/resolve`，其他 `/api/` 路径直接拒绝。
+- HTTPS 配置成功后验证后台登录入口、公开页面、短码路径、公开解析 API 和后台 API 隔离；脚本输出两个最终访问地址。
 - 任一域名证书申请失败时保留已成功的配置并明确报告部分失败，不把双域名 SSL 宣称为全部完成。
 - 只有完成浏览器视觉检查和 APK 产物构建后，才宣称网页与 APK 支持已完成。
