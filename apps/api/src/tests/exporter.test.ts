@@ -1,6 +1,6 @@
 import * as XLSX from "xlsx";
 import { describe, expect, it, vi } from "vitest";
-import { exportAccounts } from "../services/exporter";
+import { exportAccounts, exportTemplate } from "../services/exporter";
 
 describe("exportAccounts", () => {
   it("exports unknown sale status with its Chinese label", () => {
@@ -80,6 +80,8 @@ describe("exportAccounts", () => {
       "注册时间",
       "OP名称",
       "OP卡密",
+      "短 OP",
+      "项目",
       "OP到期时间",
       "归属人",
       "注册地区",
@@ -124,5 +126,66 @@ describe("exportAccounts", () => {
     expect(sheet?.C2?.t).toBe("s");
     expect(sheet?.C2?.v).toBe("2026-07-11");
     expect(sheet?.C2?.z).toBe("@");
+  });
+
+  it("exports short OP and project immediately after OP卡密", () => {
+    const output = exportAccounts([{
+      _id: "507f1f77bcf86cd799439011",
+      douyinId: "94946893573",
+      secUid: "MS4wLjABAAAA-fixture",
+      registeredAt: new Date("2026-07-11T00:00:00.000Z"),
+      opName: "",
+      opSecret: { version: 1, iv: "aXY=", ciphertext: "Y2lwaGVy", authTag: "dGFn" },
+      shortOpCode: "123456789",
+      opProject: "douyin",
+      opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
+      owner: "小王",
+      registeredRegion: "中国.香港",
+      saleStatus: "unknown",
+      accountStatus: "normal",
+      accountCheckedAt: new Date("2026-07-28T00:00:00.000Z"),
+      remark: "",
+      searchText: "",
+      createdAt: new Date("2026-07-28T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-28T00:00:00.000Z")
+    }], { encrypt: vi.fn(), decrypt: vi.fn(() => "a|b|1782303418") }, "csv").toString("utf8");
+
+    expect(output).toContain("OP卡密,短 OP,项目,OP到期时间");
+    expect(output).toContain(",123456789,抖音,");
+  });
+
+  it("marks account identifiers and short OP as text in xlsx exports", () => {
+    const buffer = exportAccounts([{
+      _id: "507f1f77bcf86cd799439011",
+      douyinId: "94946893573",
+      secUid: "MS4wLjABAAAA-fixture",
+      registeredAt: new Date("2026-07-11T00:00:00.000Z"),
+      opName: "",
+      opSecret: { version: 1, iv: "aXY=", ciphertext: "Y2lwaGVy", authTag: "dGFn" },
+      shortOpCode: "123456789",
+      opProject: "douyin",
+      opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
+      owner: "小王",
+      registeredRegion: "中国.香港",
+      saleStatus: "unknown",
+      accountStatus: "normal",
+      accountCheckedAt: new Date("2026-07-28T00:00:00.000Z"),
+      remark: "",
+      searchText: "",
+      createdAt: new Date("2026-07-28T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-28T00:00:00.000Z")
+    }], { encrypt: vi.fn(), decrypt: vi.fn(() => "a|b|1782303418") }, "xlsx");
+    const sheet = XLSX.read(buffer, { type: "buffer", cellNF: true }).Sheets["抖音账号"];
+
+    expect(sheet?.A2).toMatchObject({ t: "s", z: "@" });
+    expect(sheet?.B2).toMatchObject({ t: "s", z: "@" });
+    expect(sheet?.F2).toMatchObject({ t: "s", v: "123456789", z: "@" });
+  });
+
+  it("includes 项目 in import templates without a short OP column", () => {
+    const csv = exportTemplate("csv").toString("utf8");
+
+    expect(csv).toContain("OP卡密,项目,归属人");
+    expect(csv).not.toContain("短 OP");
   });
 });

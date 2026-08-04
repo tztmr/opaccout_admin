@@ -1,5 +1,6 @@
 import {
   AccountInputSchema,
+  DEFAULT_OP_PROJECT,
   DEFAULT_REGISTERED_REGION,
   type AccountInput,
   type SaleStatus
@@ -14,6 +15,11 @@ const STATUS_MAP: Record<string, SaleStatus> = {
   已售卖: "sold",
   已停用: "disabled",
   已找回: "recovered"
+};
+const PROJECT_MAP: Record<string, typeof DEFAULT_OP_PROJECT> = {
+  "": DEFAULT_OP_PROJECT,
+  抖音: DEFAULT_OP_PROJECT,
+  douyin: DEFAULT_OP_PROJECT
 };
 
 export type ParsedRowError = {
@@ -160,6 +166,7 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
       return;
     }
     const saleStatusLabel = String(source["售卖状态"] ?? "").trim();
+    const projectLabel = String(source["项目"] ?? "").trim();
     const candidate = {
       douyinId,
       registeredAt: normalizedDate(pickValue(source, "注册时间", "时间")),
@@ -170,7 +177,8 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
       saleStatus: saleStatusLabel
         ? STATUS_MAP[saleStatusLabel] ?? saleStatusLabel
         : undefined,
-      remark: String(source["备注"] ?? "").trim()
+      remark: String(source["备注"] ?? "").trim(),
+      opProject: PROJECT_MAP[projectLabel] ?? projectLabel
     };
     const parsed = AccountInputSchema.safeParse(candidate);
     if (!parsed.success) {

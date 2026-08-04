@@ -48,6 +48,51 @@ describe("parseImport", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it.each([
+    ["", "douyin"],
+    ["抖音", "douyin"],
+    ["douyin", "douyin"]
+  ])("maps the %s project label to %s", (项目, opProject) => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      项目
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.opProject).toBe(opProject);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("reports an unknown project as an opProject validation error", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      项目: "未知项目"
+    }]), "accounts.xlsx");
+
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.objectContaining({ field: "opProject", code: "VALIDATION_FAILED" })
+    ]);
+  });
+
+  it("does not import a supplied short OP code", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王",
+      "短 OP": "123456789"
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]).not.toHaveProperty("shortOpCode");
+    expect(result.errors).toEqual([]);
+  });
+
   it("defaults blank 注册地区 cells to 中国.香港", () => {
     const result = parseImport(workbookBuffer([{
       抖音号: "94946893573",
