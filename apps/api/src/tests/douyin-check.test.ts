@@ -56,6 +56,55 @@ describe("parseDouyinResponse", () => {
     });
   });
 
+  it("maps profile/other 违规处罚说明 + 禁止关注 to violation", () => {
+    const fixture = {
+      status: 200,
+      body: JSON.stringify({
+        status_code: 0,
+        user_info: {
+          sec_uid: "MS4wLjABAAAA_0f7F2EYnRaDNHPuWJTWFgv4iMO_C2mG6Xi6R4_f8LPv2mw2_-W_7jz-YnZcuOJW",
+          is_ban: false,
+          punish_remind_info: {
+            is_punish: true,
+            ban_type: 2,
+            punish_title: "违规处罚说明",
+            prompt_bar: {
+              content: "该用户被禁止关注"
+            },
+            punish_content: {
+              content: "该用户因违反《抖音社区自律公约》的相关规定被禁止关注"
+            }
+          }
+        }
+      })
+    };
+
+    expect(parseDouyinResponse(fixture)).toMatchObject({
+      secUid: "MS4wLjABAAAA_0f7F2EYnRaDNHPuWJTWFgv4iMO_C2mG6Xi6R4_f8LPv2mw2_-W_7jz-YnZcuOJW",
+      accountStatus: "violation"
+    });
+  });
+
+  it("maps 禁止关注 content alone to violation", () => {
+    const fixture = {
+      status: 200,
+      body: JSON.stringify({
+        status_code: 0,
+        user_info: {
+          sec_uid: "MS4wLjABAAAA-follow-ban-only",
+          punish_remind_info: {
+            is_punish: true,
+            prompt_bar: {
+              content: "该用户被禁止关注"
+            }
+          }
+        }
+      })
+    };
+
+    expect(parseDouyinResponse(fixture).accountStatus).toBe("violation");
+  });
+
   it("accepts user_info without is_ban when profile is present", () => {
     const fixture = {
       status: 200,

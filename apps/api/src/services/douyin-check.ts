@@ -11,6 +11,19 @@ const PunishmentSchema = z
     is_punish: z.boolean().optional(),
     ban_type: z.number().int().optional(),
     punish_title: z.string().optional()
+    ,
+    prompt_bar: z
+      .object({
+        content: z.string().optional()
+      })
+      .passthrough()
+      .nullish(),
+    punish_content: z
+      .object({
+        content: z.string().optional()
+      })
+      .passthrough()
+      .nullish()
   })
   .passthrough();
 
@@ -46,8 +59,16 @@ function mapAccountStatus(
   punishment: z.infer<typeof PunishmentSchema> | null | undefined
 ): AccountStatus {
   const title = punishment?.punish_title?.trim() ?? "";
+  const promptContent = punishment?.prompt_bar?.content?.trim() ?? "";
+  const punishContent = punishment?.punish_content?.content?.trim() ?? "";
+  const content = [promptContent, punishContent].filter(Boolean).join("\n");
+
   if (title === "账号已被封禁") return "banned";
   if (punishment?.is_punish && punishment.ban_type === 1) return "banned";
+  // profile/other: punish_title=违规处罚说明, content=该用户被禁止关注 => 违规
+  if (title === "违规处罚说明" || content.includes("该用户被禁止关注")) {
+    return "violation";
+  }
   if (punishment?.is_punish && punishment.ban_type === 2) return "violation";
   if (title) return "violation";
   if (punishment?.is_punish) return "violation";

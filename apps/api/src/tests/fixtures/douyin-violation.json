@@ -1,4 +1,4 @@
 {
   "status": 200,
-  "body": "{\"status_code\":0,\"user_info\":{\"sec_uid\":\"MS4wLjABAAAA-violation-fixture\",\"is_ban\":true,\"punish_remind_info\":{\"is_punish\":true,\"ban_type\":2,\"punish_title\":\"违规处罚说明\"}}}"
+  "body": "{\"status_code\":0,\"user_info\":{\"sec_uid\":\"MS4wLjABAAAA-violation-fixture\",\"is_ban\":false,\"punish_remind_info\":{\"is_punish\":true,\"ban_type\":2,\"punish_title\":\"违规处罚说明\",\"prompt_bar\":{\"content\":\"该用户被禁止关注\"},\"punish_content\":{\"content\":\"该用户因违反《抖音社区自律公约》的相关规定被禁止关注\"}}}}"
 }
