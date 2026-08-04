@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEFAULT_OP_PROJECT, OpProjectSchema } from "./short-op";
 
 export const SALE_STATUSES = [
   "unknown",
@@ -44,6 +45,7 @@ export const AccountInputSchema = z
     registeredAt: z.iso.date(),
     opName: z.string().trim().max(100).default(""),
     opSecret: z.string().min(1, "OP卡密不能为空").max(4096),
+    opProject: OpProjectSchema.default(DEFAULT_OP_PROJECT),
     owner: z.string().trim().min(1, "归属人不能为空").max(100),
     registeredRegion: z.preprocess((value) => {
       if (typeof value !== "string") return value;
@@ -113,6 +115,8 @@ export type AccountDto = {
   registeredAt: string;
   opName: string;
   hasOpSecret: true;
+  readonly shortOpCode: string;
+  readonly opProject: "douyin";
   opExpiresAt: string;
   owner: string;
   registeredRegion: string;

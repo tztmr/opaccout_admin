@@ -19,6 +19,7 @@ describe("AccountInputSchema", () => {
     });
 
     expect(value.douyinId).toBe("94946893573");
+    expect(value.opProject).toBe("douyin");
   });
 
   it("rejects an unknown sale status", () => {
@@ -46,6 +47,21 @@ describe("AccountInputSchema", () => {
         saleStatus: "unsold",
         remark: "",
         secUid: "client-value"
+      })
+    ).toThrow();
+  });
+
+  it("rejects a derived short OP code supplied by a client", () => {
+    expect(() =>
+      AccountInputSchema.parse({
+        douyinId: "94946893573",
+        registeredAt: "2026-07-27",
+        opName: "",
+        opSecret: "a|b|1782303418",
+        owner: "小王",
+        saleStatus: "unsold",
+        remark: "",
+        shortOpCode: "123456789"
       })
     ).toThrow();
   });
