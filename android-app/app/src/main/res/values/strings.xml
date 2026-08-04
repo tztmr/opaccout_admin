@@ -1,12 +1,17 @@
 <resources>
     <string name="app_name">OP 授权</string>
-    <string name="title">OP 离线授权</string>
+    <string name="title">OP 授权</string>
     <string name="authorization_request">正在为应用 %1$s 授权</string>
-    <string name="standalone_instruction">输入完整 OP 后将本地生成抖音唤醒链接</string>
-    <string name="op_hint">openid|access_token|pay_token|pfkey|auth_time</string>
+    <string name="standalone_instruction">输入 9 位短 OP 或完整 OP；完整 OP 将在本地处理</string>
+    <string name="op_hint">9 位短 OP，或 openid|access_token|pay_token|pfkey|auth_time</string>
     <string name="submit">继续</string>
-    <string name="offline_notice">完整 OP 模式只在本机编码，不会请求网络或保存输入。</string>
+    <string name="input_mode_notice">完整 OP 模式只在本机编码；9 位短 OP 仅通过 HTTPS 联网解析，均不会保存输入。</string>
     <string name="op_required">OP 数据不能为空</string>
     <string name="op_invalid">OP 数据格式不正确</string>
     <string name="wake_target_missing">未找到可处理该授权链接的应用</string>
+    <string name="short_op_loading">正在解析短 OP…</string>
+    <string name="short_op_invalid">短 OP 无效或已过期</string>
+    <string name="short_op_rate_limited">请求过于频繁</string>
+    <string name="short_op_timeout">连接超时</string>
+    <string name="short_op_offline">网络不可用</string>
 </resources>

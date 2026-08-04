@@ -2,9 +2,22 @@ plugins {
     id 'com.android.application'
 }
 
+def opApiBaseUrl = providers.gradleProperty('opApiBaseUrl')
+    .getOrElse('https://op.tztright.qzz.io')
+    .trim()
+    .replaceFirst('/+$', '')
+
+if (!(opApiBaseUrl ==~ '^https://[^/?#]+(?:/[^?#]*)?$')) {
+    throw new GradleException('opApiBaseUrl must be an absolute HTTPS base URL without query or fragment')
+}
+
 android {
     namespace 'com.tencent.mobileqq'
     compileSdk 34
+
+    buildFeatures {
+        buildConfig true
+    }
 
     defaultConfig {
         applicationId 'com.tencent.mobileqq'
@@ -12,6 +25,7 @@ android {
         targetSdk 34
         versionCode 1
         versionName '1.0.0'
+        buildConfigField 'String', 'OP_API_BASE_URL', "\"${opApiBaseUrl}\""
     }
 
     compileOptions {
@@ -29,9 +43,19 @@ tasks.register('runOfflineOpWakeUrlContract', JavaExec) {
     mainClass = 'com.tencent.mobileqq.OpWakeUrlBuilderTest'
 }
 
+tasks.register('runShortOpApiContract', JavaExec) {
+    dependsOn 'compileDebugUnitTestJavaWithJavac'
+    classpath = files(
+        layout.buildDirectory.dir('intermediates/javac/debugUnitTest/compileDebugUnitTestJavaWithJavac/classes'),
+        layout.buildDirectory.dir('intermediates/javac/debug/compileDebugJavaWithJavac/classes')
+    )
+    mainClass = 'com.tencent.mobileqq.ShortOpApiClientTest'
+}
+
 tasks.configureEach {
     if (name == 'testDebugUnitTest') {
         dependsOn 'runOfflineOpWakeUrlContract'
+        dependsOn 'runShortOpApiContract'
         failOnNoDiscoveredTests = false
     }
 }

@@ -48,6 +48,8 @@ public class OpWakeUrlBuilderTest {
         ArrayNode archivedObjects = archive.array(root.value("$objects"));
         require(archivedObjects.values.size() >= 31, "archive must expose the keyed object graph");
         DictNode response = archive.dictionary(archivedObjects.values.get(1));
+        DictNode top = archive.dictionary(root.value("$top"));
+        require(archive.logical(archivedObjects, top.value("root")) == response, "$top.root must dereference the response dictionary UID");
         DictNode responseClass = archive.dictionary(archive.logical(archivedObjects, response.value("$class")));
         requireEquals("NSMutableDictionary", archive.string(responseClass.value("$classname")), "root response must be a mutable dictionary");
 

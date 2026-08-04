@@ -47,7 +47,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="16dp"
-            android:text="@string/offline_notice"
+            android:text="@string/input_mode_notice"
             android:textColor="@color/status_text"
             android:textSize="12sp" />
     </LinearLayout>
