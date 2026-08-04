@@ -80,8 +80,12 @@ test("renders separate admin and public OP hosts with their intended boundaries"
   assert.match(publicOp, /location = \/api\/op\/resolve\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
   assert.match(publicOp, /location \^~ \/api\/\s*\{\s*return 404;/);
   assert.match(publicOp, /location \/assets\/\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
-  assert.match(publicOp, /location ~ "\^\/\[1-9\]\[0-9\]\{8\}\$"\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
-  assert.match(publicOp, /location ~ "\^\/op\/\[1-9\]\[0-9\]\{8\}\$"\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
+  assert.match(publicOp, /location = \/op\.html\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
+  assert.match(publicOp, /location = \/op\.js\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
+  assert.match(publicOp, /location = \/\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080\/op\.html;/);
+  assert.match(publicOp, /location = \/op\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080\/op\.html;/);
+  assert.match(publicOp, /location ~ "\^\/\[1-9\]\[0-9\]\{8\}\$"\s*\{[\s\S]*rewrite \^ \/op\.html break;[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
+  assert.match(publicOp, /location ~ "\^\/op\/\[1-9\]\[0-9\]\{8\}\$"\s*\{[\s\S]*rewrite \^ \/op\.html break;[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
   assert.match(publicOp, /location \/\s*\{\s*return 404;/);
 });
 

@@ -1121,7 +1121,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    location = / {
+    location = /op.html {
         proxy_pass http://127.0.0.1:${web_port};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -1130,7 +1130,26 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
+    location = /op.js {
+        proxy_pass http://127.0.0.1:${web_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location = / {
+        proxy_pass http://127.0.0.1:${web_port}/op.html;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     location ~ "^/[1-9][0-9]{8}$" {
+        rewrite ^ /op.html break;
         proxy_pass http://127.0.0.1:${web_port};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -1140,7 +1159,7 @@ server {
     }
 
     location = /op {
-        proxy_pass http://127.0.0.1:${web_port};
+        proxy_pass http://127.0.0.1:${web_port}/op.html;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -1149,6 +1168,7 @@ server {
     }
 
     location ~ "^/op/[1-9][0-9]{8}$" {
+        rewrite ^ /op.html break;
         proxy_pass http://127.0.0.1:${web_port};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
