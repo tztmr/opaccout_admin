@@ -934,7 +934,7 @@ enable_nginx_conf_if_needed() {
   enabled_dir="$(nginx_sites_enabled_dir)"
   conf_d_prefix="$(nginx_conf_d_prefix)"
   if [[ "$conf_file" == "${conf_d_prefix}"/* ]]; then
-    run_root rm -f "${enabled_dir}/$(basename "$conf_file")" 2>/dev/null || true
+    run_root rm -f "${enabled_dir}/$(basename "$conf_file")" || return 1
     return 0
   fi
   if [[ -d "$enabled_dir" ]]; then

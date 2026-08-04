@@ -182,6 +182,30 @@ test("restores a same-name enabled entry when a conf.d site removes it", () => {
   }
 });
 
+test("treats a conf.d activation cleanup failure as a dual-site rollback error", () => {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-confd-cleanup-"));
+  const confDir = join(workDir, "conf.d");
+  const enabledDir = join(workDir, "sites-enabled");
+  const adminConfig = join(confDir, "tkacc.tztright.top.conf");
+  const publicConfig = join(confDir, "op.tztright.qzz.io.conf");
+  const adminEnabled = join(enabledDir, "tkacc.tztright.top.conf");
+
+  try {
+    execFileSync("mkdir", ["-p", confDir, enabledDir]);
+    writeFileSync(join(workDir, ".env"), "WEB_PORT=8080\n");
+    writeFileSync(adminConfig, "old-admin\n");
+    writeFileSync(publicConfig, "old-public\n");
+    writeFileSync(adminEnabled, "old-enabled\n");
+
+    runTestableDeployScript(
+      'source "$1"; PROJECT_DIR="$2"; NGINX_SITES_ENABLED_DIR="$3"; NGINX_CONF_D_PREFIX="$4"; FAIL_CLEANUP="$5"; load_state() { :; }; assert_project_layout() { :; }; ensure_docker_ready() { :; }; install_nginx_if_needed() { :; }; install_certbot_if_needed() { :; }; prompt_default() { printf "%s" "$2"; }; normalize_domain() { printf "%s" "$1"; }; validate_distinct_domains() { :; }; check_domain_dns() { :; }; nginx_conf_dir() { printf "%s" "$NGINX_CONF_D_PREFIX"; }; write_admin_nginx_http_conf() { printf "new-admin\\n" > "$1"; }; write_public_op_nginx_http_conf() { printf "new-public\\n" > "$1"; }; allow_firewall_port() { :; }; reload_nginx_safely() { :; }; save_state() { :; }; docker_compose() { :; }; wait_for_http_ready() { :; }; set_env_value() { :; }; run_root() { if [[ "$1" == "rm" && "$3" == "$FAIL_CLEANUP" ]]; then return 73; fi; if [[ "$1" == "certbot" ]]; then return 0; fi; "$@"; }; ! setup_https; test "$(cat "$6")" = "old-admin"; test "$(cat "$7")" = "old-public"',
+      [workDir, enabledDir, confDir, adminEnabled, adminConfig, publicConfig]
+    );
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test("treats state persistence failure as a rollback-worthy error", () => {
   const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-state-"));
   try {
