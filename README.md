@@ -4,7 +4,7 @@
 
 ## 数据字段
 
-账号表包含：抖音号、`sec_uid`、注册时间、OP名称、OP卡密、OP到期时间、归属人、售卖状态、账号状态和备注。
+账号表包含：抖音号、`sec_uid`、注册时间、OP名称、OP卡密、短 OP、项目、OP到期时间、归属人、售卖状态、账号状态和备注。
 
 - 售卖状态：未知、未售卖、已售卖、已停用、已找回
 - 账号状态：正常、违规、封禁
@@ -15,6 +15,8 @@
 - 新增账号入库前由服务端通过 QQ API 核对 OP卡密，成功时以 API 的昵称作为 OP名称
 - OP到期时间取卡密最后一段 10 位 Unix 秒级时间戳，再固定增加 60 天
 - OP卡密使用 AES-256-GCM 字段级加密保存
+- 每个账号由服务端生成唯一的 9 位数字短 OP；新增、编辑和导入请求不能指定它
+- 首版项目固定为抖音（键 `douyin`，AppID `1105602870`）；编辑 OP 或项目不会更换短 OP
 
 ### OP名称核对
 
@@ -79,7 +81,7 @@ QQ_OP_SOCKS_PROXY_URL=socks5://127.0.0.1:1080
 也支持代理池，条目之间可用换行、英文逗号或分号分隔，例如：
 
 ```dotenv
-QQ_OP_SOCKS_PROXY_URL=198.64.244.205:50101:tztright:t5sYiBK8tD,127.0.0.1:1081,socks5://user:pass@10.0.0.2:9000
+QQ_OP_SOCKS_PROXY_URL=198.51.100.10:50101:example-user:example-password,127.0.0.1:1081,socks5://user:pass@10.0.0.2:9000
 ```
 
 支持的单条格式：
@@ -131,7 +133,19 @@ MongoDB 数据保存在命名卷 `mongo_data`。不要执行 `docker compose dow
 
 公开域名只转发上述解析 API；其他 `/api/` 路径会返回 `404`，后台管理 API
 只能从后台域名访问。短 OP 等同于可用于解析 OP 数据的凭证，分享时仅发放给
-授权对象，不要在日志、截图或工单中记录完整 OP。
+授权对象，不要在日志、截图或工单中记录短 OP、完整 OP 或唤醒链接。
+
+请求公开解析 API（示例短码是虚构值）：
+
+```bash
+curl --fail --show-error --request POST \
+  https://op.tztright.qzz.io/api/op/resolve \
+  --header 'Content-Type: application/json' \
+  --data '{"code":"123456789"}'
+```
+
+成功响应包含 APK 游戏回调所需的 `opData` 和 `wakeUrl`，因此响应也属于敏感凭证数据。
+它只应通过 HTTPS 交给受授权的 APK；不要把响应保存到前端缓存、日志、截图或工单。
 
 部署脚本的 `https` 子命令会分别生成两个 Nginx 主机配置，并为两个域名分别
 申请证书。执行前，必须先让 `tkacc.tztright.top` 和 `op.tztright.qzz.io` 的
@@ -143,8 +157,25 @@ Docker Compose 会将 Web 容器仅绑定到本机 `127.0.0.1:${WEB_PORT:-8080}`
 访问这台机器上的外层 Nginx 的 `80`、`443`；不要把 `WEB_PORT` 放行到公网，也不要
 用其他服务器直接反向代理容器端口。
 
-Android APK 的默认短 OP API 基址也是 `https://op.tztright.qzz.io`；APK 的 9 位
-短 OP 模式需要联网访问这个地址，完整 OP 模式不依赖公开 API。
+### Android APK
+
+调试交付件为 `apks/tkacc-short-op-debug.apk`。它声明 `android.permission.INTERNET`，
+并拒绝明文 HTTP（`usesCleartextTraffic=false`），但完整 OP 的本地流程仍可离线使用：
+
+- 输入完整 OP（3 至 5 段非空 `|` 分隔字段）时，APK 在本地生成唤醒链接；游戏授权调起时直接回传 `op_data`，不请求网络。
+- 输入匹配 `^[1-9][0-9]{8}$` 的短 OP 时，APK 通过公开 HTTPS API 解析；游戏授权调起时回传响应中的 `opData`，独立打开时使用响应中的 `wakeUrl`。
+
+默认 API 基址固定为生产公开域名 `https://op.tztright.qzz.io`。调试构建可仅以 HTTPS
+地址覆盖它，例如：
+
+```bash
+cd android-app
+./gradlew --offline testDebugUnitTest assembleDebug \
+  -PopApiBaseUrl=https://op.tztright.qzz.io
+```
+
+`-PopApiBaseUrl=http://...` 会在 Gradle 配置阶段被拒绝。短 OP 模式需要网络；无网络、
+超时、限流或无效短码时不会向游戏回传空授权结果，也不会把解析结果持久化或写入日志。
 
 直接使用本机 HTTP 时设置：
 
@@ -171,10 +202,11 @@ COOKIE_SECURE=true
 导入支持 `.xlsx`、`.xls` 和 `.csv`，文件最大 10 MB。可在“导入记录”页面下载模板。模板字段：
 
 ```text
-抖音号, 注册时间, OP名称, OP卡密, 归属人, 售卖状态, 备注
+抖音号, 注册时间, OP名称, OP卡密, 项目, 归属人, 售卖状态, 备注
 ```
 
-`sec_uid`、账号状态和 OP 到期时间由服务端生成，导入文件中的同名字段不会被信任。
+`sec_uid`、账号状态、短 OP 和 OP 到期时间由服务端生成，导入文件中的同名字段不会被信任。
+项目为空时默认抖音。
 
 ## 本地开发
 
@@ -201,3 +233,7 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
+
+本地 Docker 冒烟只证明容器内健康接口可用，并不验证生产 DNS、双域名 Nginx、证书签发、
+真实公开 API 请求或 APK 真机/游戏回调。上线前需分别确认两个域名的 DNS 与 SSL 证书，
+并在受控设备上使用虚构测试数据验证 Android 回调。

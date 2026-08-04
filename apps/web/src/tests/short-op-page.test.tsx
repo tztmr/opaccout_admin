@@ -55,6 +55,26 @@ describe("public short OP routing", () => {
     expect(publicOpApiUrl("op.tztright.qzz.io")).toBe("/api/op/resolve");
   });
 
+  it("serves the local legacy /op entry without bootstrapping an admin session", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderApp("/op", "localhost");
+
+    expect(screen.getByLabelText("9 位短 OP")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves a local legacy short OP path without bootstrapping an admin session", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderApp("/op/123456789", "127.0.0.1");
+
+    expect(screen.getByLabelText("9 位短 OP")).toHaveValue("123456789");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("prefills a shared path code and resolves it with a same-origin request", async () => {
     const fetchMock = vi.fn(async () => json({
       status: "success",
@@ -185,6 +205,7 @@ describe("public short OP routing", () => {
     );
 
     await userEvent.setup().click(screen.getByRole("button", { name: "立即上号" }));
+    expect(await screen.findByText("正在打开抖音")).toBeInTheDocument();
     rendered.unmount();
     await new Promise((resolve) => window.setTimeout(resolve, 30));
 

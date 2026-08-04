@@ -10,6 +10,7 @@ const input: AccountInput = {
   registeredAt: "2026-07-28",
   opName: "导入名称",
   opSecret: "openid|token|pay|pfkey|1782303418",
+  opProject: "douyin",
   owner: "小王",
   registeredRegion: "中国.香港",
   saleStatus: "unknown",

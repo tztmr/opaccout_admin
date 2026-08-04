@@ -10,6 +10,8 @@ import { ShortOpPage } from "../features/ShortOpPage";
 import { isPublicOpHost } from "../features/public-op-routing";
 
 type Session = { authenticated: true; username: string };
+const LOCAL_DEV_HOSTS = new Set(["localhost", "127.0.0.1"]);
+const LOCAL_LEGACY_PUBLIC_OP_PATH = /^\/op(?:\/([1-9][0-9]{8}))?$/;
 
 function Shell() {
   const queryClient = useQueryClient();
@@ -81,5 +83,15 @@ function AdminRoutes() {
 }
 
 export function App({ hostname = window.location.hostname }: { hostname?: string }) {
-  return isPublicOpHost(hostname) ? <PublicOpRoutes /> : <AdminRoutes />;
+  const location = useLocation();
+  if (isPublicOpHost(hostname)) return <PublicOpRoutes />;
+
+  const localLegacyPath = LOCAL_DEV_HOSTS.has(hostname.toLowerCase())
+    ? LOCAL_LEGACY_PUBLIC_OP_PATH.exec(location.pathname)
+    : undefined;
+  if (localLegacyPath) {
+    return <ShortOpPage pathname={localLegacyPath[1] ? `/${localLegacyPath[1]}` : "/"} />;
+  }
+
+  return <AdminRoutes />;
 }
