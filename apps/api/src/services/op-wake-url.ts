@@ -17,7 +17,12 @@ export function parseOpToken(input: unknown): OpToken {
   const value = String(input ?? "").trim();
   const parts = value.split("|").map((item) => item.trim());
 
-  if (parts.length < 3 || parts.slice(0, 3).some((item) => !item)) {
+  if (
+    parts.length < 3
+    || parts.length > 5
+    || parts.slice(0, 3).some((item) => !item)
+    || parts.slice(3).some((item) => !item)
+  ) {
     throw new Error("OP 数据号格式不正确，需要至少包含 openid|access_token|pay_token");
   }
 
