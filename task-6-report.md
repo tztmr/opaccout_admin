@@ -21,3 +21,10 @@
 ## Follow-up fix
 
 - JSON syntax errors occur before the route handler. A public-endpoint-scoped parser error handler now converts them to the same generic malformed-code response, preserves `no-store`, and leaves other API error handling unchanged.
+
+## Proxy trust fix
+
+- Replaced the one-hop `trust proxy = 1` setting with Express/proxy-addr's controlled `loopback`, `linklocal`, and `uniquelocal` proxy ranges. This reaches the public client through the host Nginx → web-container Nginx → API chain without trusting arbitrary public peers.
+- The API must remain private to that internal proxy network; direct public exposure would let private-network callers influence forwarded headers and is unsupported.
+- Focused route tests cover two independent public clients behind two trusted hops, a forged left-side XFF value that cannot bypass the real client bucket, and a same-client 31st request returning `429`. The focused suite passed 8 tests.
+- Error responses in the malformed-JSON and rate-limit paths are asserted not to contain the OP fixture. There is no public-route logging entrypoint.

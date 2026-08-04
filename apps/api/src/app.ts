@@ -18,6 +18,8 @@ import type { SecretCipher } from "./services/encryption";
 import { createPublicOpRouter } from "./routes/public-op";
 import type { PublicOpService } from "./services/public-op";
 
+const TRUSTED_INTERNAL_PROXIES = ["loopback", "linklocal", "uniquelocal"];
+
 const publicOpJsonErrorHandler: ErrorRequestHandler = (error, _req, res, next) => {
   if (error instanceof SyntaxError && "body" in error) {
     res.setHeader("Cache-Control", "no-store");
@@ -49,7 +51,8 @@ export function createApp({
   isReady = () => true
 }: CreateAppOptions): Express {
   const app = express();
-  app.set("trust proxy", 1);
+  // The API is reachable only through the internal Nginx proxy chain; do not expose it directly.
+  app.set("trust proxy", TRUSTED_INTERNAL_PROXIES);
   app.use(requestIdMiddleware);
   app.use(
     helmet({

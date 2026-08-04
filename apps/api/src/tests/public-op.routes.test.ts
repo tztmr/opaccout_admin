@@ -17,6 +17,12 @@ const fixtureResponse = {
   wakeUrl: "tencent1105602870://qzapp/mqzone/0?objectlocation=url"
 } satisfies PublicOpResolveResponse;
 
+function twoProxyChain(publicClientIp: string, forgedLeftIp?: string): string {
+  return [forgedLeftIp, publicClientIp, "172.20.0.10", "10.20.0.10"]
+    .filter((ip): ip is string => Boolean(ip))
+    .join(", ");
+}
+
 async function createPublicApp(
   resolve: PublicOpService["resolve"] = async () => fixtureResponse
 ) {
@@ -61,6 +67,7 @@ describe("public short OP resolve route", () => {
     expect(response.status).toBe(400);
     expect(response.headers["cache-control"]).toBe("no-store");
     expect(response.body).toEqual({ error: "请输入正确的 9 位短码" });
+    expect(JSON.stringify(response.body)).not.toContain(fixtureOp);
   });
 
   it("uses the same not-found response for a missing, expired, invalid, unknown-project, or undecryptable OP", async () => {
@@ -84,16 +91,42 @@ describe("public short OP resolve route", () => {
     }
   });
 
-  it("limits a single client to thirty requests per minute and does not cache the rate-limit response", async () => {
+  it("keeps two public clients separate after two trusted proxy hops", async () => {
     const { app } = await createPublicApp();
 
     for (let index = 0; index < 30; index += 1) {
-      await request(app).post("/api/op/resolve").send({ code: "123456789" }).expect(200);
+      await request(app)
+        .post("/api/op/resolve")
+        .set("X-Forwarded-For", twoProxyChain("198.51.100.10"))
+        .send({ code: "123456789" })
+        .expect(200);
     }
 
-    const response = await request(app).post("/api/op/resolve").send({ code: "123456789" });
+    const response = await request(app)
+      .post("/api/op/resolve")
+      .set("X-Forwarded-For", twoProxyChain("198.51.100.11"))
+      .send({ code: "123456789" });
+    expect(response.status).toBe(200);
+  });
+
+  it("does not let a forged left-side forwarding address bypass a public client limit", async () => {
+    const { app } = await createPublicApp();
+
+    for (let index = 0; index < 30; index += 1) {
+      await request(app)
+        .post("/api/op/resolve")
+        .set("X-Forwarded-For", twoProxyChain("198.51.100.10", "203.0.113.200"))
+        .send({ code: "123456789" })
+        .expect(200);
+    }
+
+    const response = await request(app)
+      .post("/api/op/resolve")
+      .set("X-Forwarded-For", twoProxyChain("198.51.100.10"))
+      .send({ code: "123456789" });
     expect(response.status).toBe(429);
     expect(response.headers["cache-control"]).toBe("no-store");
+    expect(JSON.stringify(response.body)).not.toContain(fixtureOp);
   });
 });
 
