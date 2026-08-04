@@ -715,7 +715,7 @@ deploy_app() {
   echo "分支：${BRANCH}"
   echo "访问地址：http://服务器IP:${web_port}"
   echo "首次打开后台时，请先在页面注册管理员账号。"
-  echo "如需域名 HTTPS，可继续执行脚本菜单中的“接入域名 HTTPS”。"
+  echo "如需双域名 HTTPS，可继续执行脚本菜单中的“接入双域名 HTTPS（后台 + 公开 OP）”。"
 }
 
 restart_app() {
@@ -1317,7 +1317,7 @@ print_menu() {
   echo
   echo "=========== opaccout_admin Docker 部署脚本 ==========="
   echo "1) 拉代码 + 配置 .env + Docker 部署"
-  echo "2) 接入域名 HTTPS"
+  echo "2) 接入双域名 HTTPS（后台 + 公开 OP）"
   echo "3) 配置环境变量 (.env)"
   echo "4) 查看服务状态"
   echo "5) 查看日志"

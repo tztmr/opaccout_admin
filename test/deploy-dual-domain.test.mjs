@@ -98,6 +98,8 @@ test("migrates a legacy DOMAIN state and requests a certificate for each new dom
   assert.match(executable, /printf 'OP_PUBLIC_DOMAIN=%q\\n' "\$\{OP_PUBLIC_DOMAIN:-\}"/);
   assert.match(executable, /certbot --nginx -d "\$ADMIN_DOMAIN" --redirect/);
   assert.match(executable, /certbot --nginx -d "\$OP_PUBLIC_DOMAIN" --redirect/);
+  assert.match(executable, /接入双域名 HTTPS（后台 \+ 公开 OP）/);
+  assert.match(executable, /如需双域名 HTTPS，可继续执行脚本菜单中的“接入双域名 HTTPS（后台 \+ 公开 OP）”。/);
 });
 
 test("normalizes domains before rejecting a shared admin and public host", () => {
