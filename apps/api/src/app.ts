@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type ErrorRequestHandler, type Express } from "express";
 import helmet from "helmet";
 import session, { type Store } from "express-session";
 import type { AppConfig } from "./config";
@@ -17,6 +17,15 @@ import { createExportsRouter } from "./routes/exports";
 import type { SecretCipher } from "./services/encryption";
 import { createPublicOpRouter } from "./routes/public-op";
 import type { PublicOpService } from "./services/public-op";
+
+const publicOpJsonErrorHandler: ErrorRequestHandler = (error, _req, res, next) => {
+  if (error instanceof SyntaxError && "body" in error) {
+    res.setHeader("Cache-Control", "no-store");
+    res.status(400).json({ error: "请输入正确的 9 位短码" });
+    return;
+  }
+  next(error);
+};
 
 type CreateAppOptions = {
   config: AppConfig;
@@ -52,6 +61,7 @@ export function createApp({
     next();
   });
   app.use(express.json({ limit: "1mb" }));
+  app.use("/api/op/resolve", publicOpJsonErrorHandler);
   app.use(
     session({
       name: "douyin_admin_session",

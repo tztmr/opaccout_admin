@@ -12,7 +12,12 @@
 ## Verification
 
 - `git diff --check`: passed.
+- `pnpm --filter @douyin-admin/api exec vitest run src/tests/public-op.routes.test.ts`: passed (7 tests), including malformed JSON returning a generic `400` response with `Cache-Control: no-store`.
 - `pnpm --filter @douyin-admin/api typecheck`: the new public API code type-checks. The command remains blocked by two pre-existing unrelated fixtures that omit the now-required `opProject` field:
   - `src/tests/import-worker.test.ts:12`
   - `src/tests/op-profile-policy.test.ts:8`
-- The Supertest route suite could not run in this sandbox because its temporary localhost listener is denied with `listen EPERM: operation not permitted 0.0.0.0`. Re-run it in an environment that permits local listeners.
+- The focused Supertest route suite was run with a permitted local listener.
+
+## Follow-up fix
+
+- JSON syntax errors occur before the route handler. A public-endpoint-scoped parser error handler now converts them to the same generic malformed-code response, preserves `no-store`, and leaves other API error handling unchanged.

@@ -50,7 +50,7 @@ describe("public short OP resolve route", () => {
     }
   });
 
-  it("does not cache a malformed JSON error raised before the public route", async () => {
+  it("returns a generic non-cached validation error for malformed JSON before the public route", async () => {
     const { app } = await createPublicApp();
 
     const response = await request(app)
@@ -60,6 +60,7 @@ describe("public short OP resolve route", () => {
 
     expect(response.status).toBe(400);
     expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.body).toEqual({ error: "请输入正确的 9 位短码" });
   });
 
   it("uses the same not-found response for a missing, expired, invalid, unknown-project, or undecryptable OP", async () => {
