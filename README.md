@@ -122,6 +122,26 @@ MongoDB 数据保存在命名卷 `mongo_data`。不要执行 `docker compose dow
 
 ### HTTPS
 
+生产环境固定使用两个域名，不能把公开短 OP 服务放到后台域名下：
+
+- 后台（完整 Web 和管理员 API）：`https://tkacc.tztright.top/login`
+- 公开短 OP 页面：`https://op.tztright.qzz.io/`
+- 分享链接：`https://op.tztright.qzz.io/123456789`（将 `123456789` 换成账号的 9 位短 OP）
+- 公开解析 API：`POST https://op.tztright.qzz.io/api/op/resolve`
+
+公开域名只转发上述解析 API；其他 `/api/` 路径会返回 `404`，后台管理 API
+只能从后台域名访问。短 OP 等同于可用于解析 OP 数据的凭证，分享时仅发放给
+授权对象，不要在日志、截图或工单中记录完整 OP。
+
+部署脚本的 `https` 子命令会分别生成两个 Nginx 主机配置，并为两个域名分别
+申请证书。执行前，必须先让 `tkacc.tztright.top` 和 `op.tztright.qzz.io` 的
+DNS A/AAAA 记录都指向这台服务器，且服务器的 TCP `80`、`443` 已可从公网访问。
+脚本会逐个记录证书结果：一个域名申请失败不会撤销另一个已成功的证书或配置，
+但命令仍会以非零状态退出，修复 DNS/网络后重新执行即可。
+
+Android APK 的默认短 OP API 基址也是 `https://op.tztright.qzz.io`；APK 的 9 位
+短 OP 模式需要联网访问这个地址，完整 OP 模式不依赖公开 API。
+
 直接使用本机 HTTP 时设置：
 
 ```dotenv
@@ -138,6 +158,10 @@ COOKIE_SECURE=true
 要确保最外层判定出的 `X-Forwarded-Proto: https` 能继续透传到应用容器，
 不要在中间层被重新改写成 `http`，否则登录成功后仍会因为安全 Cookie
 没有正确建立而出现 `/api/imports/preview` 这类接口返回 `401`。
+
+外层双域名 Nginx 会清除客户端伪造的 `X-Forwarded-For`，以实际对端 IP 重建
+转发链；容器内 Web Nginx 再追加自身内网跳点，和 API 的受控内网代理信任设置
+保持一致。不要绕过外层 Nginx 直接把 Docker Web 端口暴露到公网。
 
 ## 导入格式
 

@@ -30,6 +30,9 @@ APT_UPDATE_CACHE_SECONDS=1800
 PROJECT_DIR=""
 REPO_URL=""
 BRANCH=""
+ADMIN_DOMAIN="tkacc.tztright.top"
+OP_PUBLIC_DOMAIN="op.tztright.qzz.io"
+# Kept only to migrate state files written by releases before the dual-domain split.
 DOMAIN=""
 EMAIL=""
 
@@ -229,7 +232,8 @@ save_state() {
     printf 'PROJECT_DIR=%q\n' "$PROJECT_DIR"
     printf 'REPO_URL=%q\n' "$REPO_URL"
     printf 'BRANCH=%q\n' "$BRANCH"
-    printf 'DOMAIN=%q\n' "${DOMAIN:-}"
+    printf 'ADMIN_DOMAIN=%q\n' "${ADMIN_DOMAIN:-}"
+    printf 'OP_PUBLIC_DOMAIN=%q\n' "${OP_PUBLIC_DOMAIN:-}"
     printf 'EMAIL=%q\n' "${EMAIL:-}"
   } > "$STATE_FILE"
   chmod 600 "$STATE_FILE" 2>/dev/null || true
@@ -238,8 +242,16 @@ save_state() {
 load_state() {
   [[ -f "$STATE_FILE" ]] || return 1
   set +u
+  ADMIN_DOMAIN=""
+  OP_PUBLIC_DOMAIN=""
   source "$STATE_FILE"
   set -u
+
+  if [[ -z "${ADMIN_DOMAIN:-}" && -n "${DOMAIN:-}" ]]; then
+    ADMIN_DOMAIN="$DOMAIN"
+  fi
+  ADMIN_DOMAIN="${ADMIN_DOMAIN:-tkacc.tztright.top}"
+  OP_PUBLIC_DOMAIN="${OP_PUBLIC_DOMAIN:-op.tztright.qzz.io}"
   [[ -n "${PROJECT_DIR:-}" && -n "${REPO_URL:-}" && -n "${BRANCH:-}" ]]
 }
 
@@ -726,7 +738,9 @@ status_app() {
   echo "Git 仓库：${REPO_URL}"
   echo "分支：${BRANCH}"
   echo "Web 端口：${web_port}"
-  echo "域名：${DOMAIN:-未配置}"
+  echo "后台域名：https://${ADMIN_DOMAIN:-未配置}/login"
+  echo "公开短 OP 页面：https://${OP_PUBLIC_DOMAIN:-未配置}/"
+  echo "公开短 OP API：https://${OP_PUBLIC_DOMAIN:-未配置}/api/op/resolve"
   echo
   docker_compose ps
 }
@@ -893,20 +907,24 @@ enable_nginx_conf_if_needed() {
   fi
 }
 
-write_nginx_http_conf() {
-  local conf_file="$1" domain="$2" web_port="$3"
+write_admin_nginx_http_conf() {
+  local conf_file="$1" admin_domain="$2" public_domain="$3" web_port="$4"
   local tmp_file
   tmp_file="$(mktemp)"
 
   cat > "$tmp_file" <<EOF
 server {
     listen 80;
-    server_name ${domain};
+    server_name ${admin_domain};
 
     client_max_body_size 20m;
-    set \$forwarded_proto \$scheme;
-    if (\$http_x_forwarded_proto != "") {
-        set \$forwarded_proto \$http_x_forwarded_proto;
+
+    location = /op {
+        return 302 https://${public_domain}/;
+    }
+
+    location ~ ^/op/([1-9][0-9]{8})$ {
+        return 302 https://${public_domain}/\$1\$is_args\$args;
     }
 
     location / {
@@ -914,12 +932,96 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$forwarded_proto;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
+    }
+}
+EOF
+
+  run_root install -m 0644 "$tmp_file" "$conf_file"
+  rm -f "$tmp_file"
+}
+
+write_public_op_nginx_http_conf() {
+  local conf_file="$1" public_domain="$2" web_port="$3"
+  local tmp_file
+  tmp_file="$(mktemp)"
+
+  cat > "$tmp_file" <<EOF
+server {
+    listen 80;
+    server_name ${public_domain};
+
+    client_max_body_size 20m;
+
+    location = /api/op/resolve {
+        if (\$request_method != POST) { return 405; }
+        proxy_pass http://127.0.0.1:${web_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Request-ID \$request_id;
+        proxy_read_timeout 120s;
+        proxy_send_timeout 120s;
+    }
+
+    location ^~ /api/ {
+        return 404;
+    }
+
+    location /assets/ {
+        proxy_pass http://127.0.0.1:${web_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location = / {
+        proxy_pass http://127.0.0.1:${web_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ~ ^/[1-9][0-9]{8}$ {
+        proxy_pass http://127.0.0.1:${web_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location = /op {
+        proxy_pass http://127.0.0.1:${web_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location ~ ^/op/[1-9][0-9]{8}$ {
+        proxy_pass http://127.0.0.1:${web_port};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$remote_addr;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location / {
+        return 404;
     }
 }
 EOF
@@ -940,19 +1042,25 @@ setup_https() {
   web_port="$(read_env_value "${PROJECT_DIR}/.env" "WEB_PORT")"
   web_port="${web_port:-8080}"
 
-  DOMAIN="$(prompt_default "绑定域名（如 admin.example.com）" "${DOMAIN:-}")"
-  [[ -n "$DOMAIN" ]] || { error "域名不能为空"; return 1; }
-  EMAIL="$(prompt_default "证书邮箱" "${EMAIL:-admin@${DOMAIN}}")"
-  check_domain_dns "$DOMAIN"
+  ADMIN_DOMAIN="$(prompt_default "后台域名（如 admin.example.com）" "${ADMIN_DOMAIN:-tkacc.tztright.top}")"
+  OP_PUBLIC_DOMAIN="$(prompt_default "公开短 OP 域名（如 op.example.com）" "${OP_PUBLIC_DOMAIN:-op.tztright.qzz.io}")"
+  [[ -n "$ADMIN_DOMAIN" ]] || { error "后台域名不能为空"; return 1; }
+  [[ -n "$OP_PUBLIC_DOMAIN" ]] || { error "公开短 OP 域名不能为空"; return 1; }
+  EMAIL="$(prompt_default "证书邮箱" "${EMAIL:-admin@${ADMIN_DOMAIN}}")"
+  check_domain_dns "$ADMIN_DOMAIN"
+  check_domain_dns "$OP_PUBLIC_DOMAIN"
 
-  local conf_dir conf_file env_file
+  local conf_dir admin_conf_file public_conf_file env_file
   conf_dir="$(nginx_conf_dir)"
-  conf_file="${conf_dir}/${DOMAIN}.conf"
+  admin_conf_file="${conf_dir}/${ADMIN_DOMAIN}.conf"
+  public_conf_file="${conf_dir}/${OP_PUBLIC_DOMAIN}.conf"
   env_file="${PROJECT_DIR}/.env"
 
   run_root mkdir -p "$conf_dir"
-  write_nginx_http_conf "$conf_file" "$DOMAIN" "$web_port"
-  enable_nginx_conf_if_needed "$conf_file"
+  write_admin_nginx_http_conf "$admin_conf_file" "$ADMIN_DOMAIN" "$OP_PUBLIC_DOMAIN" "$web_port"
+  write_public_op_nginx_http_conf "$public_conf_file" "$OP_PUBLIC_DOMAIN" "$web_port"
+  enable_nginx_conf_if_needed "$admin_conf_file"
+  enable_nginx_conf_if_needed "$public_conf_file"
 
   allow_firewall_port 80
   allow_firewall_port 443
@@ -963,16 +1071,41 @@ setup_https() {
     run_root nginx -s reload
   fi
 
-  run_root certbot --nginx -d "$DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive
-  set_env_value "$env_file" "COOKIE_SECURE" "true"
-
-  info "COOKIE_SECURE 已切换为 true，开始重新创建容器"
-  docker_compose up -d --force-recreate api web
-  wait_for_http_ready
   save_state
 
-  ok "HTTPS 已接入"
-  echo "访问地址：https://${DOMAIN}"
+  local admin_certificate_failed=0 public_certificate_failed=0
+  if run_root certbot --nginx -d "$ADMIN_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
+    ok "后台域名证书已签发：${ADMIN_DOMAIN}"
+  else
+    error "后台域名证书签发失败：${ADMIN_DOMAIN}"
+    admin_certificate_failed=1
+  fi
+
+  if run_root certbot --nginx -d "$OP_PUBLIC_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
+    ok "公开短 OP 域名证书已签发：${OP_PUBLIC_DOMAIN}"
+  else
+    error "公开短 OP 域名证书签发失败：${OP_PUBLIC_DOMAIN}"
+    public_certificate_failed=1
+  fi
+
+  if (( admin_certificate_failed == 0 )); then
+    set_env_value "$env_file" "COOKIE_SECURE" "true"
+    info "COOKIE_SECURE 已切换为 true，开始重新创建容器"
+    docker_compose up -d --force-recreate api web
+    wait_for_http_ready
+  else
+    warn "后台证书未签发，COOKIE_SECURE 保持原值"
+  fi
+
+  if (( admin_certificate_failed != 0 || public_certificate_failed != 0 )); then
+    error "至少一个域名证书未签发；已保留成功域名的 Nginx/证书状态，请修复后重新执行 https"
+    return 1
+  fi
+
+  ok "双域名 HTTPS 已接入"
+  echo "后台：https://${ADMIN_DOMAIN}/login"
+  echo "公开页面：https://${OP_PUBLIC_DOMAIN}/"
+  echo "公开解析 API：https://${OP_PUBLIC_DOMAIN}/api/op/resolve"
 }
 
 print_menu() {
