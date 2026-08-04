@@ -200,15 +200,90 @@ td.check-cell {
 .settings-card .primary { justify-self: start; }
 .screen-center { min-height: 100vh; display: grid; place-items: center; color: var(--muted); }
 
-.short-op-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: linear-gradient(145deg, #f6f8fc 0%, #eaf0fb 100%); }
-.short-op-card { width: min(390px,100%); display: grid; gap: 15px; padding: 32px; border: 1px solid #e0e5ed; border-radius: 11px; background: #fff; box-shadow: 0 18px 45px rgba(24,35,54,.09); }
-.short-op-logo { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: var(--coral); font-size: 20px; font-weight: 800; }
-.short-op-card h1 { margin: 2px 0 -8px; font-size: 23px; letter-spacing: -.3px; }
-.short-op-card > p { margin-bottom: 2px; color: var(--muted); font-size: 13px; line-height: 1.65; }
-.short-op-card label { color: #566074; font-size: 13px; font-weight: 600; }
-.short-op-card input { height: 42px; padding: 0 12px; letter-spacing: .12em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 17px; }
-.short-op-card button { min-height: 42px; margin-top: 2px; }
-.short-op-opening { padding: 10px 11px; border-radius: 6px; color: #176b55; background: #f0fbf6; font-size: 13px; }
+.short-op-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: #182033;
+  background: radial-gradient(circle at top, #dce8ff, #f7f9fc 55%);
+}
+.short-op-card {
+  width: min(100%, 420px);
+  padding: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 24px 70px rgba(54, 79, 125, 0.16);
+}
+.short-op-card h1 {
+  margin: 0 0 10px;
+  font-size: 28px;
+  text-align: center;
+  letter-spacing: -.3px;
+}
+.short-op-intro {
+  margin: 0 0 26px;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: center;
+}
+.short-op-card form { display: grid; }
+.short-op-card label {
+  display: block;
+  margin-bottom: 8px;
+  color: #182033;
+  font-size: 14px;
+  font-weight: 650;
+}
+.short-op-card input {
+  width: 100%;
+  height: auto;
+  padding: 15px 16px;
+  border: 1px solid #cad3e2;
+  border-radius: 12px;
+  color: #182033;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  letter-spacing: .18em;
+  text-align: center;
+}
+.short-op-card input:focus {
+  border-color: #4f67e8;
+  box-shadow: 0 0 0 4px rgba(79, 103, 232, 0.12);
+}
+.short-op-submit {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 16px;
+  padding: 15px 18px;
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  background: #4058d6;
+  font-size: 16px;
+  font-weight: 700;
+}
+.short-op-submit:hover {
+  border-color: transparent;
+  background: #354bc4;
+}
+.short-op-submit:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+.short-op-message {
+  min-height: 24px;
+  margin: 14px 0 0;
+  color: #667085;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+.short-op-message.error { color: #c1292e; }
+.short-op-message.success { color: #16815f; }
 
 @keyframes progress-slide {
   0% { transform: translateX(0); }
@@ -245,6 +320,7 @@ td.check-cell {
   .import-grid { grid-template-columns: 1fr; }
   .preview-options { align-items: flex-start; flex-direction: column; }
   .preview-options .primary { width: 100%; margin-left: 0; }
-  .short-op-page { align-items: start; padding: 14vh 16px 24px; }
-  .short-op-card { padding: 25px 22px; }
+  .short-op-page { align-items: start; padding: 12vh 16px 24px; }
+  .short-op-card { padding: 28px 22px; }
+  .short-op-card h1 { font-size: 24px; }
 }

@@ -95,14 +95,14 @@ describe("public short OP routing", () => {
     );
 
     expect(screen.getByLabelText("9 位短 OP")).toHaveValue("123456789");
-    await user.click(screen.getByRole("button", { name: "立即上号" }));
+    await user.click(screen.getByRole("button", { name: "立即打开" }));
 
     expect(fetchMock).toHaveBeenCalledWith("/api/op/resolve", expect.objectContaining({
       method: "POST",
       credentials: "omit",
       body: JSON.stringify({ code: "123456789" })
     }));
-    expect(await screen.findByText("正在打开抖音")).toBeInTheDocument();
+    expect(await screen.findByText("正在打开抖音…")).toBeInTheDocument();
     expect(wake).toHaveBeenCalledWith("tencent1105602870://qzapp/mqzone/0?fixture");
     expect(document.body.textContent).not.toContain("secret-op-data");
   });
@@ -129,7 +129,7 @@ describe("public short OP routing", () => {
     );
 
     const input = screen.getByLabelText("9 位短 OP");
-    const submit = screen.getByRole("button", { name: "立即上号" });
+    const submit = screen.getByRole("button", { name: "立即打开" });
     expect(submit).toBeDisabled();
     await user.type(input, "012345678");
     expect(submit).toBeDisabled();
@@ -148,7 +148,7 @@ describe("public short OP routing", () => {
       </MemoryRouter>
     );
 
-    await user.click(screen.getByRole("button", { name: "立即上号" }));
+    await user.click(screen.getByRole("button", { name: "立即打开" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("短 OP 无效或已过期");
     expect(screen.getByRole("button", { name: "重试上号" })).toBeEnabled();
   });
@@ -174,10 +174,10 @@ describe("public short OP routing", () => {
       </MemoryRouter>
     );
 
-    await userEvent.setup().click(screen.getByRole("button", { name: "立即上号" }));
+    await userEvent.setup().click(screen.getByRole("button", { name: "立即打开" }));
 
     expect(wake).toHaveBeenCalledOnce();
-    expect(await screen.findByRole("alert")).toHaveTextContent("未能自动打开抖音");
+    expect(await screen.findByRole("alert")).toHaveTextContent("未能自动打开抖音，请确认已安装抖音后重试");
     expect(screen.getByRole("button", { name: "重试上号" })).toBeEnabled();
   });
 
@@ -204,8 +204,8 @@ describe("public short OP routing", () => {
       </MemoryRouter>
     );
 
-    await userEvent.setup().click(screen.getByRole("button", { name: "立即上号" }));
-    expect(await screen.findByText("正在打开抖音")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "立即打开" }));
+    expect(await screen.findByText("正在打开抖音…")).toBeInTheDocument();
     rendered.unmount();
     await new Promise((resolve) => window.setTimeout(resolve, 30));
 

@@ -115,31 +115,64 @@ function ShortOpForm({
   };
 
   const isOpening = state === "opening";
+  const statusText = error
+    ? error
+    : state === "resolving"
+      ? "正在解析短码…"
+      : isOpening
+        ? `正在打开${projectName || "抖音"}…`
+        : "";
+  const statusClass = error
+    ? "short-op-message error"
+    : isOpening
+      ? "short-op-message success"
+      : "short-op-message";
+
   return (
     <main className="short-op-page">
-      <form className="short-op-card" onSubmit={submit}>
-        <div className="short-op-logo" aria-hidden="true">抖</div>
-        <h1>短 OP 上号</h1>
-        <p>输入 9 位短 OP，系统将为你打开抖音。</p>
-        <label htmlFor="short-op-code">9 位短 OP</label>
-        <input
-          id="short-op-code"
-          value={code}
-          onChange={(event) => handleCodeChange(event.target.value)}
-          inputMode="numeric"
-          pattern="[1-9][0-9]{8}"
-          autoComplete="one-time-code"
-          maxLength={9}
-          placeholder="请输入 9 位数字"
-          aria-describedby={error ? "short-op-error" : undefined}
-          autoFocus
-        />
-        {error ? <div id="short-op-error" className="form-error" role="alert">{error}</div> : null}
-        {isOpening ? <div className="short-op-opening" role="status">正在打开{projectName || "抖音"}</div> : null}
-        <button className="primary" disabled={!canSubmit}>
-          {state === "resolving" ? "解析中…" : isOpening ? "正在打开…" : error ? "重试上号" : "立即上号"}
-        </button>
-      </form>
+      <section className="short-op-card">
+        <h1>短码登录</h1>
+        <p className="short-op-intro">请输入收到的 9 位短码，我们会自动打开抖音。</p>
+        <form id="short-op-form" onSubmit={submit}>
+          <label htmlFor="short-op-code">9 位短 OP</label>
+          <input
+            id="short-op-code"
+            name="code"
+            type="text"
+            value={code}
+            onChange={(event) => handleCodeChange(event.target.value)}
+            inputMode="numeric"
+            pattern="[1-9][0-9]{8}"
+            autoComplete="one-time-code"
+            maxLength={9}
+            placeholder="123456789"
+            aria-describedby="short-op-message"
+            autoFocus
+          />
+          <button
+            id="submit-short-code"
+            className="short-op-submit"
+            type="submit"
+            disabled={!canSubmit}
+          >
+            {state === "resolving"
+              ? "解析中…"
+              : isOpening
+                ? "正在打开…"
+                : error
+                  ? "重试上号"
+                  : "立即打开"}
+          </button>
+          <p
+            id="short-op-message"
+            className={statusClass}
+            role={error ? "alert" : "status"}
+            aria-live="polite"
+          >
+            {statusText}
+          </p>
+        </form>
+      </section>
     </main>
   );
 }
