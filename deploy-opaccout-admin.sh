@@ -243,16 +243,25 @@ ensure_state_dir() {
 }
 
 save_state() {
-  ensure_state_dir
-  {
+  local tmp_file
+  ensure_state_dir || return 1
+  tmp_file="$(mktemp)" || return 1
+  if ! {
     printf 'PROJECT_DIR=%q\n' "$PROJECT_DIR"
     printf 'REPO_URL=%q\n' "$REPO_URL"
     printf 'BRANCH=%q\n' "$BRANCH"
     printf 'ADMIN_DOMAIN=%q\n' "${ADMIN_DOMAIN:-}"
     printf 'OP_PUBLIC_DOMAIN=%q\n' "${OP_PUBLIC_DOMAIN:-}"
     printf 'EMAIL=%q\n' "${EMAIL:-}"
-  } > "$STATE_FILE"
-  chmod 600 "$STATE_FILE" 2>/dev/null || true
+  } > "$tmp_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  if ! install -m 0600 "$tmp_file" "$STATE_FILE"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  rm -f "$tmp_file"
 }
 
 load_state() {
@@ -919,15 +928,21 @@ enable_nginx_conf_if_needed() {
     return 0
   fi
   if [[ -d /etc/nginx/sites-enabled ]]; then
-    run_root ln -sf "$conf_file" "/etc/nginx/sites-enabled/$(basename "$conf_file")"
+    run_root ln -sf "$conf_file" "/etc/nginx/sites-enabled/$(basename "$conf_file")" || return 1
   fi
+}
+
+nginx_enabled_link_for_conf() {
+  local conf_file="$1"
+  [[ "$conf_file" == /etc/nginx/conf.d/* ]] && return 1
+  printf '/etc/nginx/sites-enabled/%s' "$(basename "$conf_file")"
 }
 
 backup_nginx_conf() {
   local conf_file="$1" backup_file="$2"
   if [[ -f "$conf_file" ]]; then
-    run_root cp "$conf_file" "$backup_file"
-    run_root touch "${backup_file}.exists"
+    run_root cp "$conf_file" "$backup_file" || return 1
+    run_root touch "${backup_file}.exists" || return 1
   else
     rm -f "$backup_file" "${backup_file}.exists"
   fi
@@ -936,15 +951,52 @@ backup_nginx_conf() {
 restore_nginx_conf() {
   local conf_file="$1" backup_file="$2"
   if [[ -f "${backup_file}.exists" ]]; then
-    run_root install -m 0644 "$backup_file" "$conf_file"
+    run_root install -m 0644 "$backup_file" "$conf_file" || return 1
   else
-    run_root rm -f "$conf_file"
+    run_root rm -f "$conf_file" || return 1
   fi
 }
 
 discard_nginx_backup() {
   local backup_file="$1"
   rm -f "$backup_file" "${backup_file}.exists"
+}
+
+backup_nginx_site() {
+  local conf_file="$1" enabled_link="$2" backup_file="$3"
+  backup_nginx_conf "$conf_file" "$backup_file" || return 1
+  [[ -n "$enabled_link" ]] || return 0
+
+  rm -f "${backup_file}.enabled-symlink" "${backup_file}.enabled-file" "${backup_file}.enabled-target"
+  if [[ -L "$enabled_link" ]]; then
+    readlink "$enabled_link" > "${backup_file}.enabled-target" || return 1
+    touch "${backup_file}.enabled-symlink"
+  elif [[ -e "$enabled_link" ]]; then
+    run_root cp -a "$enabled_link" "${backup_file}.enabled-file" || return 1
+    touch "${backup_file}.enabled-file"
+  fi
+}
+
+restore_nginx_site() {
+  local conf_file="$1" enabled_link="$2" backup_file="$3"
+  restore_nginx_conf "$conf_file" "$backup_file" || return 1
+  [[ -n "$enabled_link" ]] || return 0
+
+  if [[ -f "${backup_file}.enabled-symlink" ]]; then
+    run_root rm -f "$enabled_link" || return 1
+    run_root ln -s "$(cat "${backup_file}.enabled-target")" "$enabled_link" || return 1
+  elif [[ -f "${backup_file}.enabled-file" ]]; then
+    run_root rm -f "$enabled_link" || return 1
+    run_root cp -a "${backup_file}.enabled-file" "$enabled_link" || return 1
+  else
+    run_root rm -f "$enabled_link" || return 1
+  fi
+}
+
+discard_nginx_site_backup() {
+  local backup_file="$1"
+  discard_nginx_backup "$backup_file"
+  rm -f "${backup_file}.enabled-symlink" "${backup_file}.enabled-file" "${backup_file}.enabled-target"
 }
 
 reload_nginx_safely() {
@@ -957,6 +1009,17 @@ reload_nginx_safely() {
   else
     run_root nginx -s reload
   fi
+}
+
+rollback_nginx_sites() {
+  local admin_conf_file="$1" admin_enabled_link="$2" admin_backup="$3"
+  local public_conf_file="$4" public_enabled_link="$5" public_backup="$6"
+  local rollback_failed=0
+
+  restore_nginx_site "$admin_conf_file" "$admin_enabled_link" "$admin_backup" || rollback_failed=1
+  restore_nginx_site "$public_conf_file" "$public_enabled_link" "$public_backup" || rollback_failed=1
+  reload_nginx_safely || rollback_failed=1
+  return "$rollback_failed"
 }
 
 write_admin_nginx_http_conf() {
@@ -1109,66 +1172,88 @@ setup_https() {
   check_domain_dns "$ADMIN_DOMAIN"
   check_domain_dns "$OP_PUBLIC_DOMAIN"
 
-  local conf_dir admin_conf_file public_conf_file env_file backup_dir admin_backup public_backup
+  local conf_dir admin_conf_file public_conf_file admin_enabled_link public_enabled_link
+  local env_file backup_dir admin_backup public_backup
   conf_dir="$(nginx_conf_dir)"
   admin_conf_file="${conf_dir}/${ADMIN_DOMAIN}.conf"
   public_conf_file="${conf_dir}/${OP_PUBLIC_DOMAIN}.conf"
+  admin_enabled_link="$(nginx_enabled_link_for_conf "$admin_conf_file" || true)"
+  public_enabled_link="$(nginx_enabled_link_for_conf "$public_conf_file" || true)"
   env_file="${PROJECT_DIR}/.env"
   backup_dir="$(mktemp -d)"
   admin_backup="${backup_dir}/admin.conf"
   public_backup="${backup_dir}/public.conf"
 
   run_root mkdir -p "$conf_dir"
-  backup_nginx_conf "$admin_conf_file" "$admin_backup"
-  backup_nginx_conf "$public_conf_file" "$public_backup"
+  if ! backup_nginx_site "$admin_conf_file" "$admin_enabled_link" "$admin_backup"; then
+    rm -rf "$backup_dir"
+    error "后台 Nginx 原配置备份失败"
+    return 1
+  fi
+  if ! backup_nginx_site "$public_conf_file" "$public_enabled_link" "$public_backup"; then
+    discard_nginx_site_backup "$admin_backup"
+    rm -rf "$backup_dir"
+    error "公开短 OP Nginx 原配置备份失败"
+    return 1
+  fi
   if ! write_admin_nginx_http_conf "$admin_conf_file" "$ADMIN_DOMAIN" "$OP_PUBLIC_DOMAIN" "$web_port"; then
-    restore_nginx_conf "$admin_conf_file" "$admin_backup"
-    discard_nginx_backup "$public_backup"
+    rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
     rm -rf "$backup_dir"
     error "后台 Nginx HTTP 配置写入失败"
     return 1
   fi
   if ! write_public_op_nginx_http_conf "$public_conf_file" "$OP_PUBLIC_DOMAIN" "$web_port"; then
-    restore_nginx_conf "$admin_conf_file" "$admin_backup"
-    restore_nginx_conf "$public_conf_file" "$public_backup"
-    reload_nginx_safely || true
+    rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
     rm -rf "$backup_dir"
     error "公开短 OP Nginx HTTP 配置写入失败"
     return 1
   fi
-  enable_nginx_conf_if_needed "$admin_conf_file"
-  enable_nginx_conf_if_needed "$public_conf_file"
+  if ! enable_nginx_conf_if_needed "$admin_conf_file"; then
+    rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
+    rm -rf "$backup_dir"
+    error "后台 Nginx 站点启用失败"
+    return 1
+  fi
+  if ! enable_nginx_conf_if_needed "$public_conf_file"; then
+    rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
+    rm -rf "$backup_dir"
+    error "公开短 OP Nginx 站点启用失败"
+    return 1
+  fi
 
   allow_firewall_port 80
   allow_firewall_port 443
   if ! reload_nginx_safely; then
-    restore_nginx_conf "$admin_conf_file" "$admin_backup"
-    restore_nginx_conf "$public_conf_file" "$public_backup"
-    reload_nginx_safely || true
+    rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
     rm -rf "$backup_dir"
     return 1
   fi
 
-  save_state
+  if ! save_state; then
+    rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
+    rm -rf "$backup_dir"
+    error "部署状态保存失败，已恢复 Nginx 原配置"
+    return 1
+  fi
 
   local admin_certificate_failed=0 public_certificate_failed=0
   if run_root certbot --nginx -d "$ADMIN_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
     ok "后台域名证书已签发：${ADMIN_DOMAIN}"
-    discard_nginx_backup "$admin_backup"
+    discard_nginx_site_backup "$admin_backup"
   else
     error "后台域名证书签发失败：${ADMIN_DOMAIN}"
     admin_certificate_failed=1
-    restore_nginx_conf "$admin_conf_file" "$admin_backup"
+    restore_nginx_site "$admin_conf_file" "$admin_enabled_link" "$admin_backup"
     reload_nginx_safely || error "后台域名配置恢复后无法安全重载 Nginx"
   fi
 
   if run_root certbot --nginx -d "$OP_PUBLIC_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
     ok "公开短 OP 域名证书已签发：${OP_PUBLIC_DOMAIN}"
-    discard_nginx_backup "$public_backup"
+    discard_nginx_site_backup "$public_backup"
   else
     error "公开短 OP 域名证书签发失败：${OP_PUBLIC_DOMAIN}"
     public_certificate_failed=1
-    restore_nginx_conf "$public_conf_file" "$public_backup"
+    restore_nginx_site "$public_conf_file" "$public_enabled_link" "$public_backup"
     reload_nginx_safely || error "公开短 OP 域名配置恢复后无法安全重载 Nginx"
   fi
 

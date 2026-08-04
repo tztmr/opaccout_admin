@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -130,6 +130,47 @@ test("backs up and restores each Nginx host independently after a certificate fa
   }
 });
 
+test("restores the original site activation and removes a symlink created on first deployment", () => {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-activation-"));
+  const enabledDir = join(workDir, "sites-enabled");
+  const adminConfig = join(workDir, "admin.conf");
+  const publicConfig = join(workDir, "public.conf");
+  const adminLink = join(enabledDir, "admin.conf");
+  const publicLink = join(enabledDir, "public.conf");
+  const adminBackup = join(workDir, "admin.backup");
+  const publicBackup = join(workDir, "public.backup");
+
+  try {
+    execFileSync("mkdir", ["-p", enabledDir]);
+    writeFileSync(adminConfig, "old-admin\n");
+    writeFileSync(join(workDir, "old-public.conf"), "old-public\n");
+    execFileSync("ln", ["-s", join(workDir, "old-public.conf"), publicLink]);
+
+    runTestableDeployScript(
+      'source "$1"; run_root() { "$@"; }; backup_nginx_site "$2" "$4" "$6"; backup_nginx_site "$3" "$5" "$7"; printf "new-admin\\n" > "$2"; printf "new-public\\n" > "$3"; rm -f "$4" "$5"; ln -s "$3" "$4"; ln -s "$3" "$5"; restore_nginx_site "$2" "$4" "$6"; restore_nginx_site "$3" "$5" "$7"; test "$(cat "$2")" = "old-admin"; test ! -e "$3"; test ! -L "$4"; test "$(readlink "$5")" = "' + join(workDir, "old-public.conf") + '"',
+      [adminConfig, publicConfig, adminLink, publicLink, adminBackup, publicBackup]
+    );
+
+    assert.equal(readFileSync(adminConfig, "utf8"), "old-admin\n");
+    assert.equal(readFileSync(publicLink, "utf8"), "old-public\n");
+    assert.equal(existsSync(publicConfig), false);
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("treats state persistence failure as a rollback-worthy error", () => {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-state-"));
+  try {
+    runTestableDeployScript(
+      'source "$1"; STATE_DIR="$2"; STATE_FILE="/dev/null/state.env"; ! save_state',
+      [workDir]
+    );
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test("fails a site write when Nginx configuration installation fails", () => {
   const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-write-"));
   const configPath = join(workDir, "site.conf");
@@ -151,10 +192,12 @@ test("setup HTTPS has per-domain backup, rollback, and nonzero partial-failure p
     .filter((line) => !line.trimStart().startsWith("#"))
     .join("\n");
 
-  assert.match(executable, /backup_nginx_conf "\$admin_conf_file" "\$admin_backup"/);
-  assert.match(executable, /backup_nginx_conf "\$public_conf_file" "\$public_backup"/);
-  assert.match(executable, /restore_nginx_conf "\$admin_conf_file" "\$admin_backup"/);
-  assert.match(executable, /restore_nginx_conf "\$public_conf_file" "\$public_backup"/);
+  assert.match(executable, /backup_nginx_site "\$admin_conf_file" "\$admin_enabled_link" "\$admin_backup"/);
+  assert.match(executable, /backup_nginx_site "\$public_conf_file" "\$public_enabled_link" "\$public_backup"/);
+  assert.match(executable, /rollback_nginx_sites "\$admin_conf_file" "\$admin_enabled_link" "\$admin_backup" "\$public_conf_file" "\$public_enabled_link" "\$public_backup"/);
+  assert.match(executable, /if ! enable_nginx_conf_if_needed "\$admin_conf_file"/);
+  assert.match(executable, /if ! enable_nginx_conf_if_needed "\$public_conf_file"/);
+  assert.match(executable, /if ! save_state; then[\s\S]*rollback_nginx_sites/);
   assert.match(executable, /reload_nginx_safely/);
   assert.match(executable, /return 1/);
 });
