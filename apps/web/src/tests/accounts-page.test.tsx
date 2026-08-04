@@ -42,6 +42,103 @@ function renderPage(initialEntries = ["/accounts"]) {
 }
 
 describe("accounts page", () => {
+  it("shows short OP and project columns, copies their canonical values, and submits the default project", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [
+            {
+              _id: "account-1",
+              douyinId: "94946893573",
+              secUid: "MS4wLjABAAAA-fixture",
+              registeredAt: "2026-07-01T00:00:00.000Z",
+              opName: "API昵称",
+              hasOpSecret: true,
+              shortOpCode: "123456789",
+              opProject: "douyin",
+              opExpiresAt: "2026-08-01T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-01T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-01T00:00:00.000Z",
+              updatedAt: "2026-07-01T00:00:00.000Z"
+            },
+            {
+              _id: "account-2",
+              douyinId: "93180119509",
+              secUid: "",
+              registeredAt: "2026-07-02T00:00:00.000Z",
+              opName: "",
+              hasOpSecret: true,
+              shortOpCode: "987654321",
+              opProject: "legacy-unknown",
+              opExpiresAt: "2026-08-02T00:00:00.000Z",
+              owner: "小王",
+              registeredRegion: "中国.香港",
+              saleStatus: "unknown",
+              accountStatus: "normal",
+              accountCheckedAt: "2026-07-02T00:00:00.000Z",
+              remark: "",
+              createdAt: "2026-07-02T00:00:00.000Z",
+              updatedAt: "2026-07-02T00:00:00.000Z"
+            }
+          ],
+          page: 1,
+          pageSize: 20,
+          total: 2,
+          totalPages: 1,
+          stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/account-1") {
+        expect(init?.method).toBe("PATCH");
+        expect(JSON.parse(String(init?.body))).toMatchObject({ opProject: "douyin" });
+        return json({});
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+
+    renderPage();
+
+    expect(
+      (await screen.findAllByRole("columnheader")).map((node) => node.textContent)
+    ).toEqual([
+      "", "序号", "抖音号", "sec_uid", "注册时间", "OP名称", "OP卡密",
+      "短 OP", "项目", "OP到期时间", "归属人", "注册地区", "售卖状态", "账号状态", "备注", "操作"
+    ]);
+    expect(await screen.findByText("未知项目")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "复制短 OP 123456789" }));
+    expect(writeText).toHaveBeenLastCalledWith("123456789");
+    await user.click(screen.getByRole("button", { name: "复制短 OP 链接 123456789" }));
+    expect(writeText).toHaveBeenLastCalledWith("https://op.tztright.qzz.io/123456789");
+
+    await user.click(screen.getByRole("button", { name: "新增账号" }));
+    expect(screen.getByLabelText("项目")).toHaveValue("douyin");
+    expect(document.querySelector('input[name="shortOpCode"]')).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    const [firstEdit] = screen.getAllByRole("button", { name: "编辑" });
+    expect(firstEdit).toBeDefined();
+    await user.click(firstEdit!);
+    expect(screen.getByLabelText("项目")).toHaveValue("douyin");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/accounts/account-1",
+        expect.objectContaining({ method: "PATCH" })
+      );
+    });
+  });
+
   it("renders sec_uid as a Douyin profile link and opens a batch status dialog", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);

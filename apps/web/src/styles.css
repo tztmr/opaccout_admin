@@ -68,12 +68,14 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea { border: 1px
 input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus { border-color: #9bb9ff; box-shadow: 0 0 0 3px #eff4ff; }
 select { height: 36px; padding: 0 30px 0 10px; }
 .table-scroll { width: 100%; overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+table { width: 100%; min-width: 1720px; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
 th { height: 43px; padding: 0 12px; color: #6d7688; background: #fafbfc; text-align: left; font-weight: 600; }
 td { max-width: 220px; height: 50px; padding: 0 12px; border-top: 1px solid #edf0f4; overflow: hidden; text-overflow: ellipsis; }
 tbody tr:hover { background: #fafcff; }
 .empty { height: 118px; text-align: center; color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #657087; }
+.short-op-cell { min-width: 192px; max-width: none; }
+.short-op-cell .link { margin-left: 8px; }
 .tag { width: max-content; min-height: 24px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .sale-unknown { color: #667085; background: #f2f4f7; }
 .sale-unsold { color: #866100; background: #fff6d8; }

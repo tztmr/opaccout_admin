@@ -24,4 +24,14 @@ describe("global form control styles", () => {
     expect(batchBarRule).toContain("flex-wrap: wrap;");
     expect(batchBarButtonRule).toContain("white-space: nowrap;");
   });
+
+  it("keeps the expanded account table horizontally scrollable without ellipsizing checkboxes", () => {
+    const tableScrollRule = styles.match(/\.table-scroll\s*\{[^}]+\}/)?.[0] ?? "";
+    const tableRule = styles.match(/table\s*\{[^}]+\}/)?.[0] ?? "";
+    const checkCellRule = styles.match(/\.check-cell,[\s\S]*?\n}\n/)?.[0] ?? "";
+
+    expect(tableScrollRule).toContain("overflow-x: auto;");
+    expect(tableRule).toContain("min-width:");
+    expect(checkCellRule).toContain("text-overflow: clip !important;");
+  });
 });
