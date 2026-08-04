@@ -7,7 +7,11 @@ import { testConfig } from "./test-config";
 
 describe("account routes", () => {
   it("requires login and forwards a validated create request", async () => {
-    const create = vi.fn(async () => ({ _id: "account-id" }));
+    const create = vi.fn(async () => ({
+      _id: "account-id",
+      shortOpCode: "123456789",
+      opProject: "douyin"
+    }));
     const accountService = {
       create,
       list: vi.fn(),
@@ -47,6 +51,10 @@ describe("account routes", () => {
     });
 
     expect(response.status).toBe(201);
+    expect(response.body).toMatchObject({
+      shortOpCode: "123456789",
+      opProject: "douyin"
+    });
     expect(create).toHaveBeenCalledOnce();
   });
 

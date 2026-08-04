@@ -4,6 +4,11 @@ import type { AccountRecord } from "../models/account";
 import { createAccountsService } from "../services/accounts";
 import type { OpProfileCheckResult } from "../services/op-profile";
 
+vi.mock("node:crypto", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:crypto")>()),
+  randomInt: vi.fn(() => 123456789)
+}));
+
 const context = { ip: "127.0.0.1", userAgent: "test", requestId: "request-id" };
 
 function accountDocument(overrides: Record<string, unknown> = {}) {
@@ -26,6 +31,8 @@ function accountDocument(overrides: Record<string, unknown> = {}) {
     accountStatus: "normal" as const,
     accountCheckedAt: new Date("2026-07-27T00:00:00.000Z"),
     remark: "",
+    shortOpCode: "123456789",
+    opProject: "douyin" as const,
     searchText: "",
     createdAt: new Date("2026-07-27T00:00:00.000Z"),
     updatedAt: new Date("2026-07-27T00:00:00.000Z"),
@@ -118,7 +125,31 @@ describe("accounts service", () => {
     }));
     expect(result).not.toHaveProperty("opSecret");
     expect(result.registeredRegion).toBe("中国.澳门");
+    expect(result).toMatchObject({
+      shortOpCode: "123456789",
+      opProject: "douyin"
+    });
     expect(auditWrite).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the assigned short OP code when updating an account", async () => {
+    const account = accountDocument();
+    const service = createAccountsService(
+      dependencies({ findById: vi.fn(async () => account) })
+    );
+
+    const result = await service.update(
+      String(account._id),
+      { remark: "changed" },
+      context
+    );
+
+    expect(result).toMatchObject({
+      shortOpCode: "123456789",
+      opProject: "douyin",
+      remark: "changed"
+    });
+    expect(account.save).toHaveBeenCalledOnce();
   });
 
   it("rejects client supplied derived fields", async () => {

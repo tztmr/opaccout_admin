@@ -2,6 +2,7 @@ import {
   ACCOUNT_STATUSES,
   DEFAULT_OP_PROJECT,
   OpProjectSchema,
+  OP_PROJECTS,
   SALE_STATUSES,
   type AccountStatus,
   type SaleStatus
@@ -97,7 +98,7 @@ AccountSchema.pre("validate", function buildSearchText() {
     this.secUid,
     this.opName,
     this.shortOpCode,
-    this.opProject,
+    OP_PROJECTS[this.opProject ?? DEFAULT_OP_PROJECT].name,
     this.owner,
     this.registeredRegion,
     this.remark

@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { createApp } from "./app";
 import { loadConfig } from "./config";
 import { ImportJobModel } from "./models/import-job";
+import { AccountModel } from "./models/account";
 import { auditService } from "./services/audit";
 import { createAccountsService } from "./services/accounts";
 import { createAdminAuthService } from "./services/admin-auth";
@@ -16,10 +17,13 @@ import { createOpProfileChecker } from "./services/op-profile";
 import { parseSocksProxyPool } from "./services/socks-fetch";
 import { createSocksFetch } from "./services/socks-fetch";
 import { normalizeBannedSaleStatuses } from "./services/sale-status-policy";
+import { backfillMissingShortOps } from "./services/short-op-code";
 
 async function main() {
   const config = loadConfig(process.env);
   await mongoose.connect(config.mongoUri);
+  await AccountModel.syncIndexes();
+  await backfillMissingShortOps(AccountModel);
   await normalizeBannedSaleStatuses();
   await ImportJobModel.updateMany(
     { status: "running" },

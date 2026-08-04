@@ -5,6 +5,7 @@ import {
   type AccountInput,
   type AccountListQuery,
   type AccountStats,
+  DEFAULT_OP_PROJECT,
   DEFAULT_REGISTERED_REGION,
   type PagedResponse,
   type SaleStatus
@@ -22,6 +23,7 @@ import {
 } from "./op-profile-policy";
 import { DouyinCheckError } from "./douyin-check";
 import { normalizedDate } from "./import-parser";
+import { createAccountWithShortOpRetry } from "./short-op-code";
 import {
   assertBannedSaleStatusChange,
   resolveDetectedSaleStatus
@@ -88,6 +90,8 @@ function toDto(value: AccountRecord & { _id: unknown }): AccountDto {
     registeredAt: value.registeredAt.toISOString(),
     opName: value.opName,
     hasOpSecret: true,
+    shortOpCode: value.shortOpCode!,
+    opProject: value.opProject ?? DEFAULT_OP_PROJECT,
     opExpiresAt: value.opExpiresAt.toISOString(),
     owner: value.owner,
     registeredRegion: value.registeredRegion || DEFAULT_REGISTERED_REGION,
@@ -181,7 +185,7 @@ export function createAccountsService({
       const prepared = applyOpProfileResult(input, opResult);
       const accountStatus = resolveAccountStatus(detected.accountStatus, opResult);
       try {
-        const created = await model.create({
+        const created = await createAccountWithShortOpRetry(model, {
           ...prepared,
           registeredAt: new Date(`${prepared.registeredAt}T00:00:00.000Z`),
           secUid: detected.secUid,
@@ -366,6 +370,7 @@ export function createAccountsService({
         registeredAt: account.registeredAt.toISOString().slice(0, 10),
         opName: account.opName,
         opSecret,
+        opProject: account.opProject ?? DEFAULT_OP_PROJECT,
         owner: account.owner,
         registeredRegion: account.registeredRegion,
         saleStatus: account.saleStatus,

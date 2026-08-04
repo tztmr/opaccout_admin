@@ -92,13 +92,17 @@ describe("Account model", () => {
       saleStatus: "unsold",
       accountStatus: "normal",
       accountCheckedAt: new Date(),
-      remark: " 新号 "
+      remark: " 新号 ",
+      shortOpCode: "123456789",
+      opProject: "douyin"
     });
 
     await account.validate();
 
     expect(account.searchText).toContain("ms4wljabaaaa-fixture");
     expect(account.searchText).toContain("星河");
+    expect(account.searchText).toContain("123456789");
+    expect(account.searchText).toContain("抖音");
   });
 });
 
