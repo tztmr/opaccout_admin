@@ -37,7 +37,30 @@ export function ShortOpPage({
 }: ShortOpPageProps) {
   const location = useLocation();
   const initialCode = extractPublicShortCode(pathname ?? location.pathname) ?? "";
-  const [code, setCode] = useState(() => initialCode);
+  return (
+    <ShortOpForm
+      key={initialCode}
+      initialCode={initialCode}
+      hostname={hostname}
+      onWake={onWake}
+      wakeRecoveryDelayMs={wakeRecoveryDelayMs}
+    />
+  );
+}
+
+type ShortOpFormProps = Required<Pick<ShortOpPageProps,
+  "hostname" | "onWake" | "wakeRecoveryDelayMs"
+>> & {
+  initialCode: string;
+};
+
+function ShortOpForm({
+  initialCode,
+  hostname,
+  onWake,
+  wakeRecoveryDelayMs
+}: ShortOpFormProps) {
+  const [code, setCode] = useState(initialCode);
   const [state, setState] = useState<"idle" | "resolving" | "opening">("idle");
   const [error, setError] = useState("");
   const [projectName, setProjectName] = useState("");
@@ -47,6 +70,7 @@ export function ShortOpPage({
   useEffect(() => () => {
     if (wakeRecoveryTimer.current !== undefined) {
       window.clearTimeout(wakeRecoveryTimer.current);
+      wakeRecoveryTimer.current = undefined;
     }
   }, []);
 
@@ -80,6 +104,7 @@ export function ShortOpPage({
       setState("opening");
       onWake(result.wakeUrl);
       wakeRecoveryTimer.current = window.setTimeout(() => {
+        wakeRecoveryTimer.current = undefined;
         setState("idle");
         setError("未能自动打开抖音，请确认已安装抖音后重试");
       }, wakeRecoveryDelayMs);

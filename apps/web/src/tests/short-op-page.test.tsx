@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { Link, MemoryRouter, Route, Routes } from "react-router-dom";
 import { App } from "../app/App";
 import { ShortOpPage } from "../features/ShortOpPage";
 import {
@@ -29,8 +29,18 @@ function renderApp(pathname: string, hostname: string) {
   );
 }
 
+function ShortOpNavigationHarness() {
+  return <>
+    <Link to="/987654321">切换短 OP</Link>
+    <Routes>
+      <Route path="/:code" element={<ShortOpPage hostname="op.tztright.qzz.io" onWake={vi.fn()} />} />
+    </Routes>
+  </>;
+}
+
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -75,6 +85,19 @@ describe("public short OP routing", () => {
     expect(await screen.findByText("正在打开抖音")).toBeInTheDocument();
     expect(wake).toHaveBeenCalledWith("tencent1105602870://qzapp/mqzone/0?fixture");
     expect(document.body.textContent).not.toContain("secret-op-data");
+  });
+
+  it("replaces the prefilled code when a mounted route navigates to another short code", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/123456789"]}>
+        <ShortOpNavigationHarness />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByLabelText("9 位短 OP")).toHaveValue("123456789");
+    await user.click(screen.getByRole("link", { name: "切换短 OP" }));
+    expect(screen.getByLabelText("9 位短 OP")).toHaveValue("987654321");
   });
 
   it("accepts only nine non-zero-leading digits and keeps submit disabled otherwise", async () => {
@@ -136,6 +159,38 @@ describe("public short OP routing", () => {
     expect(wake).toHaveBeenCalledOnce();
     expect(await screen.findByRole("alert")).toHaveTextContent("未能自动打开抖音");
     expect(screen.getByRole("button", { name: "重试上号" })).toBeEnabled();
+  });
+
+  it("cancels the wake recovery timer when the page unmounts", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({
+      status: "success",
+      code: "123456789",
+      opData: "secret-op-data",
+      project: { key: "douyin", name: "抖音", appId: "1105602870" },
+      expiresAt: "2026-08-23T12:16:58.000Z",
+      wakeUrl: "tencent1105602870://qzapp/mqzone/0?fixture"
+    })));
+    const clearTimeoutMock = vi.spyOn(window, "clearTimeout");
+    const consoleErrorMock = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const wake = vi.fn();
+    const rendered = render(
+      <MemoryRouter>
+        <ShortOpPage
+          pathname="/123456789"
+          hostname="op.tztright.qzz.io"
+          onWake={wake}
+          wakeRecoveryDelayMs={10}
+        />
+      </MemoryRouter>
+    );
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "立即上号" }));
+    rendered.unmount();
+    await new Promise((resolve) => window.setTimeout(resolve, 30));
+
+    expect(wake).toHaveBeenCalledOnce();
+    expect(clearTimeoutMock).toHaveBeenCalled();
+    expect(consoleErrorMock).not.toHaveBeenCalled();
   });
 
   it("does not bootstrap an admin session on the public host", () => {
