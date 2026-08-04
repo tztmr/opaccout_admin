@@ -70,7 +70,7 @@ test("renders separate admin and public OP hosts with their intended boundaries"
 
   assert.match(admin, /server_name tkacc\.tztright\.top;/);
   assert.match(admin, /location = \/op\s*\{[\s\S]*return 302 https:\/\/op\.tztright\.qzz\.io\//);
-  assert.match(admin, /location ~ \^\/op\/\(\[1-9\]\[0-9\]\{8\}\)\$\s*\{[\s\S]*return 302 https:\/\/op\.tztright\.qzz\.io\/\$1/);
+  assert.match(admin, /location ~ "\^\/op\/\(\[1-9\]\[0-9\]\{8\}\)\$"\s*\{[\s\S]*return 302 https:\/\/op\.tztright\.qzz\.io\/\$1/);
   assert.match(admin, /location \/\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
   assert.match(admin, /proxy_set_header X-Forwarded-For \$remote_addr;/);
   assert.match(admin, /proxy_set_header X-Forwarded-Proto \$scheme;/);
@@ -80,7 +80,8 @@ test("renders separate admin and public OP hosts with their intended boundaries"
   assert.match(publicOp, /location = \/api\/op\/resolve\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
   assert.match(publicOp, /location \^~ \/api\/\s*\{\s*return 404;/);
   assert.match(publicOp, /location \/assets\/\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
-  assert.match(publicOp, /location ~ \^\/\[1-9\]\[0-9\]\{8\}\$\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
+  assert.match(publicOp, /location ~ "\^\/\[1-9\]\[0-9\]\{8\}\$"\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
+  assert.match(publicOp, /location ~ "\^\/op\/\[1-9\]\[0-9\]\{8\}\$"\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
   assert.match(publicOp, /location \/\s*\{\s*return 404;/);
 });
 

@@ -1057,7 +1057,7 @@ server {
         return 302 https://${public_domain}/;
     }
 
-    location ~ ^/op/([1-9][0-9]{8})$ {
+    location ~ "^/op/([1-9][0-9]{8})$" {
         return 302 https://${public_domain}/\$1\$is_args\$args;
     }
 
@@ -1130,7 +1130,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    location ~ ^/[1-9][0-9]{8}$ {
+    location ~ "^/[1-9][0-9]{8}$" {
         proxy_pass http://127.0.0.1:${web_port};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -1148,7 +1148,7 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
-    location ~ ^/op/[1-9][0-9]{8}$ {
+    location ~ "^/op/[1-9][0-9]{8}$" {
         proxy_pass http://127.0.0.1:${web_port};
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
