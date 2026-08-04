@@ -921,21 +921,32 @@ nginx_conf_dir() {
   fi
 }
 
+nginx_sites_enabled_dir() {
+  printf '%s' "${NGINX_SITES_ENABLED_DIR:-/etc/nginx/sites-enabled}"
+}
+
+nginx_conf_d_prefix() {
+  printf '%s' "${NGINX_CONF_D_PREFIX:-/etc/nginx/conf.d}"
+}
+
 enable_nginx_conf_if_needed() {
-  local conf_file="$1"
-  if [[ "$conf_file" == /etc/nginx/conf.d/* ]]; then
-    run_root rm -f "/etc/nginx/sites-enabled/$(basename "$conf_file")" 2>/dev/null || true
+  local conf_file="$1" enabled_dir conf_d_prefix
+  enabled_dir="$(nginx_sites_enabled_dir)"
+  conf_d_prefix="$(nginx_conf_d_prefix)"
+  if [[ "$conf_file" == "${conf_d_prefix}"/* ]]; then
+    run_root rm -f "${enabled_dir}/$(basename "$conf_file")" 2>/dev/null || true
     return 0
   fi
-  if [[ -d /etc/nginx/sites-enabled ]]; then
-    run_root ln -sf "$conf_file" "/etc/nginx/sites-enabled/$(basename "$conf_file")" || return 1
+  if [[ -d "$enabled_dir" ]]; then
+    run_root ln -sf "$conf_file" "${enabled_dir}/$(basename "$conf_file")" || return 1
   fi
 }
 
 nginx_enabled_link_for_conf() {
-  local conf_file="$1"
-  [[ "$conf_file" == /etc/nginx/conf.d/* ]] && return 1
-  printf '/etc/nginx/sites-enabled/%s' "$(basename "$conf_file")"
+  local conf_file="$1" enabled_dir
+  enabled_dir="$(nginx_sites_enabled_dir)"
+  [[ -d "$enabled_dir" ]] || return 1
+  printf '%s/%s' "$enabled_dir" "$(basename "$conf_file")"
 }
 
 backup_nginx_conf() {
@@ -997,6 +1008,14 @@ discard_nginx_site_backup() {
   local backup_file="$1"
   discard_nginx_backup "$backup_file"
   rm -f "${backup_file}.enabled-symlink" "${backup_file}.enabled-file" "${backup_file}.enabled-target"
+}
+
+cleanup_nginx_backups() {
+  local backup_dir="$1"
+  if ! rm -rf "$backup_dir"; then
+    error "Nginx 配置备份临时目录清理失败：${backup_dir}"
+    return 1
+  fi
 }
 
 reload_nginx_safely() {
@@ -1186,37 +1205,37 @@ setup_https() {
 
   run_root mkdir -p "$conf_dir"
   if ! backup_nginx_site "$admin_conf_file" "$admin_enabled_link" "$admin_backup"; then
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     error "后台 Nginx 原配置备份失败"
     return 1
   fi
   if ! backup_nginx_site "$public_conf_file" "$public_enabled_link" "$public_backup"; then
     discard_nginx_site_backup "$admin_backup"
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     error "公开短 OP Nginx 原配置备份失败"
     return 1
   fi
   if ! write_admin_nginx_http_conf "$admin_conf_file" "$ADMIN_DOMAIN" "$OP_PUBLIC_DOMAIN" "$web_port"; then
     rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     error "后台 Nginx HTTP 配置写入失败"
     return 1
   fi
   if ! write_public_op_nginx_http_conf "$public_conf_file" "$OP_PUBLIC_DOMAIN" "$web_port"; then
     rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     error "公开短 OP Nginx HTTP 配置写入失败"
     return 1
   fi
   if ! enable_nginx_conf_if_needed "$admin_conf_file"; then
     rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     error "后台 Nginx 站点启用失败"
     return 1
   fi
   if ! enable_nginx_conf_if_needed "$public_conf_file"; then
     rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     error "公开短 OP Nginx 站点启用失败"
     return 1
   fi
@@ -1225,26 +1244,33 @@ setup_https() {
   allow_firewall_port 443
   if ! reload_nginx_safely; then
     rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     return 1
   fi
 
   if ! save_state; then
     rollback_nginx_sites "$admin_conf_file" "$admin_enabled_link" "$admin_backup" "$public_conf_file" "$public_enabled_link" "$public_backup" || true
-    rm -rf "$backup_dir"
+    cleanup_nginx_backups "$backup_dir" || true
     error "部署状态保存失败，已恢复 Nginx 原配置"
     return 1
   fi
 
   local admin_certificate_failed=0 public_certificate_failed=0
+  local admin_rollback_failed=0 public_rollback_failed=0 cleanup_failed=0
   if run_root certbot --nginx -d "$ADMIN_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
     ok "后台域名证书已签发：${ADMIN_DOMAIN}"
     discard_nginx_site_backup "$admin_backup"
   else
     error "后台域名证书签发失败：${ADMIN_DOMAIN}"
     admin_certificate_failed=1
-    restore_nginx_site "$admin_conf_file" "$admin_enabled_link" "$admin_backup"
-    reload_nginx_safely || error "后台域名配置恢复后无法安全重载 Nginx"
+    if ! restore_nginx_site "$admin_conf_file" "$admin_enabled_link" "$admin_backup"; then
+      error "后台域名配置恢复失败"
+      admin_rollback_failed=1
+    fi
+    if ! reload_nginx_safely; then
+      error "后台域名配置恢复后无法安全重载 Nginx"
+      admin_rollback_failed=1
+    fi
   fi
 
   if run_root certbot --nginx -d "$OP_PUBLIC_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
@@ -1253,8 +1279,14 @@ setup_https() {
   else
     error "公开短 OP 域名证书签发失败：${OP_PUBLIC_DOMAIN}"
     public_certificate_failed=1
-    restore_nginx_site "$public_conf_file" "$public_enabled_link" "$public_backup"
-    reload_nginx_safely || error "公开短 OP 域名配置恢复后无法安全重载 Nginx"
+    if ! restore_nginx_site "$public_conf_file" "$public_enabled_link" "$public_backup"; then
+      error "公开短 OP 域名配置恢复失败"
+      public_rollback_failed=1
+    fi
+    if ! reload_nginx_safely; then
+      error "公开短 OP 域名配置恢复后无法安全重载 Nginx"
+      public_rollback_failed=1
+    fi
   fi
 
   if (( admin_certificate_failed == 0 )); then
@@ -1266,13 +1298,15 @@ setup_https() {
     warn "后台证书未签发，COOKIE_SECURE 保持原值"
   fi
 
-  if (( admin_certificate_failed != 0 || public_certificate_failed != 0 )); then
-    rm -rf "$backup_dir"
+  if ! cleanup_nginx_backups "$backup_dir"; then
+    cleanup_failed=1
+  fi
+
+  if (( admin_certificate_failed != 0 || public_certificate_failed != 0 || admin_rollback_failed != 0 || public_rollback_failed != 0 || cleanup_failed != 0 )); then
     error "至少一个域名证书未签发；已保留成功域名的 Nginx/证书状态，请修复后重新执行 https"
     return 1
   fi
 
-  rm -rf "$backup_dir"
   ok "双域名 HTTPS 已接入"
   echo "后台：https://${ADMIN_DOMAIN}/login"
   echo "公开页面：https://${OP_PUBLIC_DOMAIN}/"

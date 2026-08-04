@@ -159,6 +159,29 @@ test("restores the original site activation and removes a symlink created on fir
   }
 });
 
+test("restores a same-name enabled entry when a conf.d site removes it", () => {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-confd-"));
+  const enabledDir = join(workDir, "sites-enabled");
+  const configPath = join(workDir, "conf.d", "admin.conf");
+  const enabledPath = join(enabledDir, "admin.conf");
+  const backupPath = join(workDir, "admin.backup");
+  const originalTarget = join(workDir, "previous-admin.conf");
+
+  try {
+    execFileSync("mkdir", ["-p", join(workDir, "conf.d"), enabledDir]);
+    writeFileSync(configPath, "new-admin\n");
+    writeFileSync(originalTarget, "old-admin\n");
+    execFileSync("ln", ["-s", originalTarget, enabledPath]);
+
+    runTestableDeployScript(
+      'source "$1"; NGINX_SITES_ENABLED_DIR="$2"; NGINX_CONF_D_PREFIX="$(dirname "$3")"; run_root() { "$@"; }; enabled="$(nginx_enabled_link_for_conf "$3")"; test "$enabled" = "$4"; backup_nginx_site "$3" "$enabled" "$5"; enable_nginx_conf_if_needed "$3"; test ! -L "$4"; restore_nginx_site "$3" "$enabled" "$5"; test "$(readlink "$4")" = "$6"',
+      [enabledDir, configPath, enabledPath, backupPath, originalTarget]
+    );
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test("treats state persistence failure as a rollback-worthy error", () => {
   const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-state-"));
   try {
@@ -198,6 +221,13 @@ test("setup HTTPS has per-domain backup, rollback, and nonzero partial-failure p
   assert.match(executable, /if ! enable_nginx_conf_if_needed "\$admin_conf_file"/);
   assert.match(executable, /if ! enable_nginx_conf_if_needed "\$public_conf_file"/);
   assert.match(executable, /if ! save_state; then[\s\S]*rollback_nginx_sites/);
+  assert.match(executable, /if ! restore_nginx_site "\$admin_conf_file" "\$admin_enabled_link" "\$admin_backup"; then[\s\S]*admin_rollback_failed=1/);
+  assert.match(executable, /if ! restore_nginx_site "\$public_conf_file" "\$public_enabled_link" "\$public_backup"; then[\s\S]*public_rollback_failed=1/);
+  assert.match(executable, /cleanup_nginx_backups/);
+  assert.ok(
+    executable.indexOf('certbot --nginx -d "$OP_PUBLIC_DOMAIN"') >
+      executable.indexOf('if ! restore_nginx_site "$admin_conf_file"')
+  );
   assert.match(executable, /reload_nginx_safely/);
   assert.match(executable, /return 1/);
 });
