@@ -1,3 +1,4 @@
 <resources>
+    <color name="icon_background">#1976D2</color>
     <color name="status_text">#5F6368</color>
 </resources>

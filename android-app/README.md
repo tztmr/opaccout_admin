@@ -8,6 +8,10 @@
 `AgentActivity` 调起时，成功结果按 QQ 回调协议放在 `key_response`，并从中使用完整
 OP 的字段。该离线基线不声明 `INTERNET` 权限、不记录或持久化 OP。
 
+这里的“兼容”指生成的 bplist 可由 `NSKeyedArchiver` 解析为与服务端 `op-wake-url`
+相同的对象图和字段语义（包括五段 OP 字段、过期字段和回调常量），而非要求不同实现
+产出逐字节完全相同的序列化结果。
+
 ## 要求与构建
 
 - Java 源/目标版本：17
