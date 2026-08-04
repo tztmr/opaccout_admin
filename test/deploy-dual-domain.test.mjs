@@ -39,6 +39,22 @@ function renderOuterNginx(functionName, ...args) {
   }
 }
 
+function runTestableDeployScript(command, args = []) {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-"));
+  const sourcePath = join(workDir, "deploy.sh");
+
+  try {
+    const script = readFileSync(deployScriptPath, "utf8");
+    writeFileSync(sourcePath, script.replace(/\nmain "\$@"\s*$/, "\n"));
+    return execFileSync("bash", ["-c", command, "bash", sourcePath, ...args], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+}
+
 test("renders separate admin and public OP hosts with their intended boundaries", () => {
   const admin = renderOuterNginx(
     "write_admin_nginx_http_conf",
@@ -82,6 +98,75 @@ test("migrates a legacy DOMAIN state and requests a certificate for each new dom
   assert.match(executable, /printf 'OP_PUBLIC_DOMAIN=%q\\n' "\$\{OP_PUBLIC_DOMAIN:-\}"/);
   assert.match(executable, /certbot --nginx -d "\$ADMIN_DOMAIN" --redirect/);
   assert.match(executable, /certbot --nginx -d "\$OP_PUBLIC_DOMAIN" --redirect/);
+});
+
+test("normalizes domains before rejecting a shared admin and public host", () => {
+  const output = runTestableDeployScript(
+    'source "$1"; admin="$(normalize_domain " TKACC.TZTRIGHT.TOP. ")"; public="$(normalize_domain "tkacc.tztright.top")"; printf "%s|%s\\n" "$admin" "$public"; ! validate_distinct_domains "$admin" "$public"'
+  );
+
+  assert.equal(output, "tkacc.tztright.top|tkacc.tztright.top\n");
+});
+
+test("backs up and restores each Nginx host independently after a certificate failure", () => {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-config-"));
+  const adminConfig = join(workDir, "admin.conf");
+  const publicConfig = join(workDir, "public.conf");
+  const adminBackup = join(workDir, "admin.backup");
+  const publicBackup = join(workDir, "public.backup");
+
+  try {
+    writeFileSync(adminConfig, "old-admin\n");
+    writeFileSync(publicConfig, "old-public\n");
+    runTestableDeployScript(
+      'source "$1"; run_root() { "$@"; }; backup_nginx_conf "$2" "$4"; backup_nginx_conf "$3" "$5"; printf "new-admin\\n" > "$2"; printf "new-public\\n" > "$3"; restore_nginx_conf "$3" "$5"; test "$(cat "$2")" = "new-admin"; test "$(cat "$3")" = "old-public"',
+      [adminConfig, publicConfig, adminBackup, publicBackup]
+    );
+
+    assert.equal(readFileSync(adminConfig, "utf8"), "new-admin\n");
+    assert.equal(readFileSync(publicConfig, "utf8"), "old-public\n");
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("fails a site write when Nginx configuration installation fails", () => {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-dual-domain-write-"));
+  const configPath = join(workDir, "site.conf");
+
+  try {
+    runTestableDeployScript(
+      'source "$1"; run_root() { return 1; }; ! write_public_op_nginx_http_conf "$2" "op.tztright.qzz.io" "8080"',
+      [configPath]
+    );
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
+test("setup HTTPS has per-domain backup, rollback, and nonzero partial-failure paths", () => {
+  const script = readFileSync(deployScriptPath, "utf8");
+  const executable = script
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+
+  assert.match(executable, /backup_nginx_conf "\$admin_conf_file" "\$admin_backup"/);
+  assert.match(executable, /backup_nginx_conf "\$public_conf_file" "\$public_backup"/);
+  assert.match(executable, /restore_nginx_conf "\$admin_conf_file" "\$admin_backup"/);
+  assert.match(executable, /restore_nginx_conf "\$public_conf_file" "\$public_backup"/);
+  assert.match(executable, /reload_nginx_safely/);
+  assert.match(executable, /return 1/);
+});
+
+test("publishes the Web container only to the local outer Nginx", () => {
+  const compose = readFileSync(join(repositoryRoot, "docker-compose.yml"), "utf8");
+  const executable = compose
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .join("\n");
+
+  assert.match(executable, /- "127\.0\.0\.1:\$\{WEB_PORT:-8080\}:8080"/);
 });
 
 test("container Nginx preserves the controlled proxy chain before the API", () => {

@@ -139,6 +139,10 @@ DNS A/AAAA 记录都指向这台服务器，且服务器的 TCP `80`、`443` 已
 脚本会逐个记录证书结果：一个域名申请失败不会撤销另一个已成功的证书或配置，
 但命令仍会以非零状态退出，修复 DNS/网络后重新执行即可。
 
+Docker Compose 会将 Web 容器仅绑定到本机 `127.0.0.1:${WEB_PORT:-8080}`。公网只应
+访问这台机器上的外层 Nginx 的 `80`、`443`；不要把 `WEB_PORT` 放行到公网，也不要
+用其他服务器直接反向代理容器端口。
+
 Android APK 的默认短 OP API 基址也是 `https://op.tztright.qzz.io`；APK 的 9 位
 短 OP 模式需要联网访问这个地址，完整 OP 模式不依赖公开 API。
 
@@ -148,16 +152,15 @@ Android APK 的默认短 OP API 基址也是 `https://op.tztright.qzz.io`；APK 
 COOKIE_SECURE=false
 ```
 
-部署到 HTTPS 域名并由反向代理传递 `X-Forwarded-Proto` 后，必须改为：
+部署到 HTTPS 域名后，必须改为：
 
 ```dotenv
 COOKIE_SECURE=true
 ```
 
-如果你的服务器前面还有一层面板 Nginx、宝塔、1Panel、Caddy 或 CDN，
-要确保最外层判定出的 `X-Forwarded-Proto: https` 能继续透传到应用容器，
-不要在中间层被重新改写成 `http`，否则登录成功后仍会因为安全 Cookie
-没有正确建立而出现 `/api/imports/preview` 这类接口返回 `401`。
+部署脚本在本机 Nginx 上由 Certbot 终止 TLS，并以该 Nginx 自己的 `$scheme` 重写
+`X-Forwarded-Proto`。不要让面板、CDN 或任意上游传来的同名请求头直接成为应用的
+受信输入；若另有入口代理，应让它转发到本机 Nginx 的 HTTPS 入口，而不是绕过该边界。
 
 外层双域名 Nginx 会清除客户端伪造的 `X-Forwarded-For`，以实际对端 IP 重建
 转发链；容器内 Web Nginx 再追加自身内网跳点，和 API 的受控内网代理信任设置

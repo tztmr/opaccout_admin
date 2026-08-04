@@ -43,6 +43,22 @@ trim() {
   printf '%s' "$value"
 }
 
+normalize_domain() {
+  local domain
+  domain="$(trim "${1:-}")"
+  domain="${domain%.}"
+  domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')"
+  printf '%s' "$domain"
+}
+
+validate_distinct_domains() {
+  local admin_domain="$1" public_domain="$2"
+  if [[ "$admin_domain" == "$public_domain" ]]; then
+    error "后台域名和公开短 OP 域名不能相同"
+    return 1
+  fi
+}
+
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
 apt_primary_mirror() {
@@ -907,6 +923,42 @@ enable_nginx_conf_if_needed() {
   fi
 }
 
+backup_nginx_conf() {
+  local conf_file="$1" backup_file="$2"
+  if [[ -f "$conf_file" ]]; then
+    run_root cp "$conf_file" "$backup_file"
+    run_root touch "${backup_file}.exists"
+  else
+    rm -f "$backup_file" "${backup_file}.exists"
+  fi
+}
+
+restore_nginx_conf() {
+  local conf_file="$1" backup_file="$2"
+  if [[ -f "${backup_file}.exists" ]]; then
+    run_root install -m 0644 "$backup_file" "$conf_file"
+  else
+    run_root rm -f "$conf_file"
+  fi
+}
+
+discard_nginx_backup() {
+  local backup_file="$1"
+  rm -f "$backup_file" "${backup_file}.exists"
+}
+
+reload_nginx_safely() {
+  if ! run_root nginx -t; then
+    error "Nginx 配置校验失败，未执行重载"
+    return 1
+  fi
+  if command_exists systemctl; then
+    run_root systemctl reload nginx
+  else
+    run_root nginx -s reload
+  fi
+}
+
 write_admin_nginx_http_conf() {
   local conf_file="$1" admin_domain="$2" public_domain="$3" web_port="$4"
   local tmp_file
@@ -942,7 +994,10 @@ server {
 }
 EOF
 
-  run_root install -m 0644 "$tmp_file" "$conf_file"
+  if ! run_root install -m 0644 "$tmp_file" "$conf_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
   rm -f "$tmp_file"
 }
 
@@ -1026,7 +1081,10 @@ server {
 }
 EOF
 
-  run_root install -m 0644 "$tmp_file" "$conf_file"
+  if ! run_root install -m 0644 "$tmp_file" "$conf_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
   rm -f "$tmp_file"
 }
 
@@ -1042,33 +1100,53 @@ setup_https() {
   web_port="$(read_env_value "${PROJECT_DIR}/.env" "WEB_PORT")"
   web_port="${web_port:-8080}"
 
-  ADMIN_DOMAIN="$(prompt_default "后台域名（如 admin.example.com）" "${ADMIN_DOMAIN:-tkacc.tztright.top}")"
-  OP_PUBLIC_DOMAIN="$(prompt_default "公开短 OP 域名（如 op.example.com）" "${OP_PUBLIC_DOMAIN:-op.tztright.qzz.io}")"
+  ADMIN_DOMAIN="$(normalize_domain "$(prompt_default "后台域名（如 admin.example.com）" "${ADMIN_DOMAIN:-tkacc.tztright.top}")")"
+  OP_PUBLIC_DOMAIN="$(normalize_domain "$(prompt_default "公开短 OP 域名（如 op.example.com）" "${OP_PUBLIC_DOMAIN:-op.tztright.qzz.io}")")"
   [[ -n "$ADMIN_DOMAIN" ]] || { error "后台域名不能为空"; return 1; }
   [[ -n "$OP_PUBLIC_DOMAIN" ]] || { error "公开短 OP 域名不能为空"; return 1; }
+  validate_distinct_domains "$ADMIN_DOMAIN" "$OP_PUBLIC_DOMAIN"
   EMAIL="$(prompt_default "证书邮箱" "${EMAIL:-admin@${ADMIN_DOMAIN}}")"
   check_domain_dns "$ADMIN_DOMAIN"
   check_domain_dns "$OP_PUBLIC_DOMAIN"
 
-  local conf_dir admin_conf_file public_conf_file env_file
+  local conf_dir admin_conf_file public_conf_file env_file backup_dir admin_backup public_backup
   conf_dir="$(nginx_conf_dir)"
   admin_conf_file="${conf_dir}/${ADMIN_DOMAIN}.conf"
   public_conf_file="${conf_dir}/${OP_PUBLIC_DOMAIN}.conf"
   env_file="${PROJECT_DIR}/.env"
+  backup_dir="$(mktemp -d)"
+  admin_backup="${backup_dir}/admin.conf"
+  public_backup="${backup_dir}/public.conf"
 
   run_root mkdir -p "$conf_dir"
-  write_admin_nginx_http_conf "$admin_conf_file" "$ADMIN_DOMAIN" "$OP_PUBLIC_DOMAIN" "$web_port"
-  write_public_op_nginx_http_conf "$public_conf_file" "$OP_PUBLIC_DOMAIN" "$web_port"
+  backup_nginx_conf "$admin_conf_file" "$admin_backup"
+  backup_nginx_conf "$public_conf_file" "$public_backup"
+  if ! write_admin_nginx_http_conf "$admin_conf_file" "$ADMIN_DOMAIN" "$OP_PUBLIC_DOMAIN" "$web_port"; then
+    restore_nginx_conf "$admin_conf_file" "$admin_backup"
+    discard_nginx_backup "$public_backup"
+    rm -rf "$backup_dir"
+    error "后台 Nginx HTTP 配置写入失败"
+    return 1
+  fi
+  if ! write_public_op_nginx_http_conf "$public_conf_file" "$OP_PUBLIC_DOMAIN" "$web_port"; then
+    restore_nginx_conf "$admin_conf_file" "$admin_backup"
+    restore_nginx_conf "$public_conf_file" "$public_backup"
+    reload_nginx_safely || true
+    rm -rf "$backup_dir"
+    error "公开短 OP Nginx HTTP 配置写入失败"
+    return 1
+  fi
   enable_nginx_conf_if_needed "$admin_conf_file"
   enable_nginx_conf_if_needed "$public_conf_file"
 
   allow_firewall_port 80
   allow_firewall_port 443
-  run_root nginx -t
-  if command_exists systemctl; then
-    run_root systemctl reload nginx
-  else
-    run_root nginx -s reload
+  if ! reload_nginx_safely; then
+    restore_nginx_conf "$admin_conf_file" "$admin_backup"
+    restore_nginx_conf "$public_conf_file" "$public_backup"
+    reload_nginx_safely || true
+    rm -rf "$backup_dir"
+    return 1
   fi
 
   save_state
@@ -1076,16 +1154,22 @@ setup_https() {
   local admin_certificate_failed=0 public_certificate_failed=0
   if run_root certbot --nginx -d "$ADMIN_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
     ok "后台域名证书已签发：${ADMIN_DOMAIN}"
+    discard_nginx_backup "$admin_backup"
   else
     error "后台域名证书签发失败：${ADMIN_DOMAIN}"
     admin_certificate_failed=1
+    restore_nginx_conf "$admin_conf_file" "$admin_backup"
+    reload_nginx_safely || error "后台域名配置恢复后无法安全重载 Nginx"
   fi
 
   if run_root certbot --nginx -d "$OP_PUBLIC_DOMAIN" --redirect -m "$EMAIL" --agree-tos --non-interactive; then
     ok "公开短 OP 域名证书已签发：${OP_PUBLIC_DOMAIN}"
+    discard_nginx_backup "$public_backup"
   else
     error "公开短 OP 域名证书签发失败：${OP_PUBLIC_DOMAIN}"
     public_certificate_failed=1
+    restore_nginx_conf "$public_conf_file" "$public_backup"
+    reload_nginx_safely || error "公开短 OP 域名配置恢复后无法安全重载 Nginx"
   fi
 
   if (( admin_certificate_failed == 0 )); then
@@ -1098,10 +1182,12 @@ setup_https() {
   fi
 
   if (( admin_certificate_failed != 0 || public_certificate_failed != 0 )); then
+    rm -rf "$backup_dir"
     error "至少一个域名证书未签发；已保留成功域名的 Nginx/证书状态，请修复后重新执行 https"
     return 1
   fi
 
+  rm -rf "$backup_dir"
   ok "双域名 HTTPS 已接入"
   echo "后台：https://${ADMIN_DOMAIN}/login"
   echo "公开页面：https://${OP_PUBLIC_DOMAIN}/"
