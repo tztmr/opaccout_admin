@@ -17,6 +17,7 @@ import { createOpProfileChecker } from "./services/op-profile";
 import { parseSocksProxyPool } from "./services/socks-fetch";
 import { createSocksFetch } from "./services/socks-fetch";
 import { normalizeBannedSaleStatuses } from "./services/sale-status-policy";
+import { backfillOpExpiries } from "./services/op-expiry";
 import { backfillMissingShortOps } from "./services/short-op-code";
 import { createPublicOpService } from "./services/public-op";
 
@@ -31,7 +32,10 @@ async function main() {
     { $set: { status: "queued" }, $unset: { startedAt: 1 } }
   );
   const cipher = createSecretCipher(config.fieldEncryptionKey);
-  const publicOpService = createPublicOpService({ cipher });
+  const expiryBackfill = await backfillOpExpiries(AccountModel, cipher);
+  process.stdout.write(
+    `OP expiry backfill updated=${expiryBackfill.updated} unchanged=${expiryBackfill.unchanged} failed=${expiryBackfill.failed}\n`
+  );
   const checkDouyinId = createDouyinChecker({
     baseUrl: config.douyinCheckApiUrl,
     profileUrl: config.douyinProfileApiUrl
@@ -54,6 +58,7 @@ async function main() {
     },
     timeoutMs: config.qqOpProfileTimeoutMs
   });
+  const publicOpService = createPublicOpService({ cipher, checkOpProfile });
   const accounts = createAccountsService({
     checkDouyinId,
     checkOpProfile,

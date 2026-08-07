@@ -4,6 +4,7 @@ import type { PublicOpResolveResponse } from "@douyin-admin/shared";
 import { createApp } from "../app";
 import { createPublicOpService } from "../services/public-op";
 import type { PublicOpService } from "../services/public-op";
+import type { OpProfileCheckResult } from "../services/op-profile";
 import { createTestAdminAuth } from "./admin-test-helper";
 import { testConfig } from "./test-config";
 
@@ -30,6 +31,34 @@ async function createPublicApp(
   const publicOpService = { resolve };
   const app = createApp({ config: testConfig, adminAuth, ...{ publicOpService } });
   return { app, resolve };
+}
+
+function createService(options: {
+  account: {
+    shortOpCode?: string;
+    opExpiresAt: Date;
+    accountStatus: string;
+    opSecret: { version: 1; iv: string; ciphertext: string; authTag: string };
+    opProject?: string;
+  } | null;
+  decrypt?: () => string;
+  checkOpProfile?: (opSecret: string) => Promise<OpProfileCheckResult>;
+  now?: Date;
+}) {
+  return createPublicOpService({
+    model: {
+      findOne: () => ({ lean: async () => options.account })
+    },
+    cipher: {
+      encrypt: vi.fn(),
+      decrypt: options.decrypt ?? (() => fixtureOp)
+    },
+    checkOpProfile:
+      options.checkOpProfile
+      ?? (async () => ({ kind: "success", nickname: "fixture" })),
+    now: () => options.now ?? new Date("2026-08-04T12:16:58.000Z"),
+    buildWakeUrl: () => fixtureResponse.wakeUrl
+  });
 }
 
 describe("public short OP resolve route", () => {
@@ -131,50 +160,98 @@ describe("public short OP resolve route", () => {
 });
 
 describe("public short OP service", () => {
-  it("does not disclose OP data from a missing, expired, invalid, unknown-project, or undecryptable record", async () => {
-    const baseAccount = {
-      shortOpCode: "123456789",
-      opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
-      accountStatus: "normal",
-      opProject: "douyin",
-      opSecret: { version: 1 as const, iv: "aXY=", ciphertext: "Y2lwaGVy", authTag: "dGFn" }
-    };
+  const baseAccount = {
+    shortOpCode: "123456789",
+    opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
+    accountStatus: "normal",
+    opProject: "douyin",
+    opSecret: { version: 1 as const, iv: "aXY=", ciphertext: "Y2lwaGVy", authTag: "dGFn" }
+  };
+
+  it("does not disclose OP data from a missing, invalid, unknown-project, or undecryptable record", async () => {
     const cases = [
-      { account: null, decrypt: () => fixtureOp },
-      { account: { ...baseAccount, opExpiresAt: new Date("2026-08-03T12:16:58.000Z") }, decrypt: () => fixtureOp },
-      { account: { ...baseAccount, accountStatus: "op_invalid" }, decrypt: () => fixtureOp },
-      { account: { ...baseAccount, opProject: "unknown" }, decrypt: () => fixtureOp },
-      { account: baseAccount, decrypt: () => { throw new Error("cipher failed"); } }
+      {
+        account: null,
+        checkOpProfile: async () => ({ kind: "success", nickname: "fixture" } as const)
+      },
+      {
+        account: { ...baseAccount, accountStatus: "op_invalid" },
+        checkOpProfile: async () => ({ kind: "message", message: "token is invalid" } as const)
+      },
+      {
+        account: { ...baseAccount, opProject: "unknown" },
+        checkOpProfile: async () => ({ kind: "success", nickname: "fixture" } as const)
+      },
+      {
+        account: baseAccount,
+        decrypt: () => {
+          throw new Error("cipher failed");
+        },
+        checkOpProfile: async () => ({ kind: "success", nickname: "fixture" } as const)
+      }
     ];
 
-    for (const { account, decrypt } of cases) {
-      const model = {
-        findOne: () => ({ lean: async () => account })
-      };
-      const service = createPublicOpService({
-        model,
-        cipher: { encrypt: vi.fn(), decrypt },
-        now: () => new Date("2026-08-04T12:16:58.000Z"),
-        buildWakeUrl: () => fixtureResponse.wakeUrl
+    for (const item of cases) {
+      const service = createService({
+        account: item.account,
+        decrypt: item.decrypt,
+        checkOpProfile: item.checkOpProfile
       });
-
       await expect(service.resolve("123456789")).resolves.toBeNull();
     }
   });
 
   it("returns the decrypted OP, project, expiry, and wake URL for a current valid record", async () => {
-    const account = {
-      shortOpCode: "123456789",
-      opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
-      accountStatus: "normal",
-      opProject: "douyin",
-      opSecret: { version: 1 as const, iv: "aXY=", ciphertext: "Y2lwaGVy", authTag: "dGFn" }
-    };
-    const service = createPublicOpService({
-      model: { findOne: () => ({ lean: async () => account }) },
-      cipher: { encrypt: vi.fn(), decrypt: () => fixtureOp },
-      now: () => new Date("2026-08-04T12:16:58.000Z"),
-      buildWakeUrl: () => fixtureResponse.wakeUrl
+    const service = createService({ account: baseAccount });
+    await expect(service.resolve("123456789")).resolves.toEqual(fixtureResponse);
+  });
+
+  it("allows a locally expired short OP when QQ profile check still succeeds", async () => {
+    const service = createService({
+      account: {
+        ...baseAccount,
+        opExpiresAt: new Date("2026-08-05T12:13:00.000Z")
+      },
+      now: new Date("2026-08-07T01:00:00.000Z"),
+      checkOpProfile: async () => ({ kind: "success", nickname: "still-valid" })
+    });
+
+    await expect(service.resolve("123456789")).resolves.toEqual({
+      ...fixtureResponse,
+      expiresAt: "2026-08-05T12:13:00.000Z"
+    });
+  });
+
+  it("rejects a locally expired short OP when QQ says the token is invalid", async () => {
+    const service = createService({
+      account: {
+        ...baseAccount,
+        opExpiresAt: new Date("2026-08-05T12:13:00.000Z")
+      },
+      now: new Date("2026-08-07T01:00:00.000Z"),
+      checkOpProfile: async () => ({ kind: "message", message: "token is invalid" })
+    });
+
+    await expect(service.resolve("123456789")).resolves.toBeNull();
+  });
+
+  it("rejects a locally expired short OP when QQ profile check is unavailable", async () => {
+    const service = createService({
+      account: {
+        ...baseAccount,
+        opExpiresAt: new Date("2026-08-05T12:13:00.000Z")
+      },
+      now: new Date("2026-08-07T01:00:00.000Z"),
+      checkOpProfile: async () => ({ kind: "unavailable" })
+    });
+
+    await expect(service.resolve("123456789")).resolves.toBeNull();
+  });
+
+  it("keeps a current short OP available when QQ profile check is temporarily unavailable", async () => {
+    const service = createService({
+      account: baseAccount,
+      checkOpProfile: async () => ({ kind: "unavailable" })
     });
 
     await expect(service.resolve("123456789")).resolves.toEqual(fixtureResponse);
