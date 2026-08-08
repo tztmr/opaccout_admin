@@ -8,6 +8,15 @@
 
 **Tech Stack:** Android Gradle Plugin 9.1、Gradle 9.3.1、Java 17、Android SDK 34、原生 Android XML/Activity、ADB、aapt2、apksigner。
 
+## Approved Execution Adjustment
+
+用户于 2026-08-08 明确批准在当前 `main` checkout 中保留现有改动并直接实施，同时批准 UI XML 使用资源编译、Lint 和真机截图验收。执行时以下调整覆盖后文的旧静态契约步骤：
+
+- 不创建 `UiResourceContractTest.java` 或 `MainActivitySourceContractTest.java`；测试规则禁止把源码/XML 文本搜索当成行为测试。
+- UI XML 与 drawable 作为配置资源，使用 `processDebugResources`、`lintDebug` 和设备截图验证。
+- `MainActivity` 行为先创建 `android-app/app/src/androidTest/java/com/tencent/mobileqq/MainActivityInstrumentedTest.java`，使用平台 `InstrumentationTestRunner` 和 `UiAutomation` 验证游戏授权模式提交虚构完整 OP 后显示不含敏感值的成功弹窗；先在旧 Activity 上运行并观察失败，再实现弹窗接线并观察通过。
+- QA Instrumentation 构建固定使用 `-PapplicationIdOverride=com.edking.tkacc.opqa`，避免覆盖设备上的原版包。
+
 ## Global Constraints
 
 - 最低系统版本保持 `minSdk 24`，不通过提高最低版本规避 Lint 错误。
@@ -27,8 +36,7 @@
 
 ### Create
 
-- `android-app/app/src/test/java/com/tencent/mobileqq/UiResourceContractTest.java`：验证主页面、弹窗和敏感数据显示约束。
-- `android-app/app/src/test/java/com/tencent/mobileqq/MainActivitySourceContractTest.java`：验证弹窗接线、生命周期清理和无假延时约束。
+- `android-app/app/src/androidTest/java/com/tencent/mobileqq/MainActivityInstrumentedTest.java`：在真实 Android UI 中验证成功弹窗和敏感数据不展示。
 - `android-app/app/src/main/res/layout/dialog_loading.xml`：真实处理过程的原版风格加载弹窗。
 - `android-app/app/src/main/res/layout/dialog_success.xml`：不展示 Token 的原版风格成功弹窗。
 - `android-app/app/src/main/res/drawable/ic_op_logo.xml`：主页面盾牌 OP Logo。
