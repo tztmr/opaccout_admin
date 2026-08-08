@@ -32,14 +32,14 @@ afterEach(() => {
 });
 
 describe("settings page", () => {
-  it("renders and submits a multiline QQ proxy pool textarea", async () => {
+  it("does not render or submit the removed QQ proxy pool", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/settings" && !init?.method) {
         return json({
           defaultPageSize: 20,
           sessionHours: 12,
-          qqOpSocksProxyPool: "127.0.0.1:1080"
+          qqOpSocksProxyPool: "socks5://127.0.0.1:1080"
         });
       }
       if (path === "/api/settings" && init?.method === "PATCH") {
@@ -52,19 +52,11 @@ describe("settings page", () => {
 
     renderPage();
 
-    await screen.findByPlaceholderText(/一行一个代理/);
-    const getTextarea = () =>
-      screen.getByPlaceholderText(/一行一个代理/) as HTMLTextAreaElement;
+    await screen.findByRole("button", { name: "保存设置" });
     await waitFor(() => {
-      expect(getTextarea()).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: "保存设置" })).not.toBeDisabled();
     });
-    const textarea = getTextarea();
-
-    await user.clear(textarea);
-    await user.type(
-      textarea,
-      "127.0.0.1:1080\n198.64.244.205:50101:tztright:t5sYiBK8tD"
-    );
+    expect(screen.queryByText("QQ OP SOCKS 代理池")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "保存设置" }));
 
     await waitFor(() => {
@@ -74,9 +66,7 @@ describe("settings page", () => {
           method: "PATCH",
           body: JSON.stringify({
             defaultPageSize: 20,
-            sessionHours: 12,
-            qqOpSocksProxyPool:
-              "127.0.0.1:1080\n198.64.244.205:50101:tztright:t5sYiBK8tD"
+            sessionHours: 12
           }),
           credentials: "include"
         })

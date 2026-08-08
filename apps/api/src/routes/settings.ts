@@ -1,15 +1,25 @@
 import { Router } from "express";
 import { z } from "zod";
-import type { AppConfig } from "../config";
 import { SettingModel } from "../models/setting";
 
 const SettingsSchema = z.object({
   defaultPageSize: z.number().int().min(10).max(100),
-  sessionHours: z.number().int().min(1).max(168),
-  qqOpSocksProxyPool: z.string().max(50_000)
+  sessionHours: z.number().int().min(1).max(168)
 }).strict();
 
-export function createSettingsRouter(config: Pick<AppConfig, "qqOpSocksProxyUrls">): Router {
+function publicSettings(settings: {
+  defaultPageSize: number;
+  sessionHours: number;
+  updatedAt?: Date;
+}) {
+  return {
+    defaultPageSize: settings.defaultPageSize,
+    sessionHours: settings.sessionHours,
+    updatedAt: settings.updatedAt
+  };
+}
+
+export function createSettingsRouter(): Router {
   const router = Router();
   router.get("/", async (_req, res, next) => {
     try {
@@ -18,15 +28,12 @@ export function createSettingsRouter(config: Pick<AppConfig, "qqOpSocksProxyUrls
         {
           $setOnInsert: {
             defaultPageSize: 20,
-            sessionHours: 12,
-            qqOpSocksProxyPool: config.qqOpSocksProxyUrls
-              .map((item) => item.href)
-              .join("\n")
+            sessionHours: 12
           }
         },
         { new: true, upsert: true }
       ).lean();
-      res.json(settings);
+      res.json(publicSettings(settings));
     } catch (error) { next(error); }
   });
   router.patch("/", async (req, res, next) => {
@@ -37,7 +44,7 @@ export function createSettingsRouter(config: Pick<AppConfig, "qqOpSocksProxyUrls
         { $set: value },
         { new: true, upsert: true }
       ).lean();
-      res.json(settings);
+      res.json(publicSettings(settings));
     } catch (error) { next(error); }
   });
   return router;

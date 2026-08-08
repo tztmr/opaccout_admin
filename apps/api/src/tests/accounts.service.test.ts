@@ -120,7 +120,7 @@ describe("accounts service", () => {
       secUid: "MS4wLjABAAAA-fixture",
       registeredRegion: "中国.澳门",
       accountStatus: "normal",
-      opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
+      opExpiresAt: new Date("2026-09-22T12:16:58.000Z"),
       opSecret: expect.objectContaining({ ciphertext: "Y2lwaGVy" })
     }));
     expect(result).not.toHaveProperty("opSecret");

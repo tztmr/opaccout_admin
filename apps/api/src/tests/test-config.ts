@@ -15,7 +15,6 @@ export const testConfig: AppConfig = {
   qqOpProfileApiUrl: new URL(
     "https://graph.qq.com/user/get_simple_userinfo"
   ),
-  qqOpSocksProxyUrls: [],
   qqOpAppId: "1105602870",
   qqOpProfileTimeoutMs: 5000,
   cookieSecure: false

@@ -90,7 +90,7 @@ export function createApp({
   if (cipher) app.use("/api/imports", requireAdmin, createImportsRouter(cipher));
   if (cipher && audit) app.use("/api/exports", requireAdmin, createExportsRouter(cipher, audit));
   app.use("/api/audit-logs", requireAdmin, createAuditLogsRouter());
-  app.use("/api/settings", requireAdmin, createSettingsRouter(config));
+  app.use("/api/settings", requireAdmin, createSettingsRouter());
   app.get("/api/test/protected", requireAdmin, (_req, res) => {
     res.json({ ok: true });
   });

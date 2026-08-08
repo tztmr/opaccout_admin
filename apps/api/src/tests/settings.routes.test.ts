@@ -23,13 +23,13 @@ afterEach(() => {
 });
 
 describe("settings routes", () => {
-  it("returns default settings including the QQ proxy pool", async () => {
+  it("does not expose a legacy QQ proxy pool setting", async () => {
     vi.spyOn(SettingModel, "findOneAndUpdate").mockReturnValue({
       lean: async () => ({
         key: "admin",
         defaultPageSize: 20,
         sessionHours: 12,
-        qqOpSocksProxyPool: ""
+        qqOpSocksProxyPool: "socks5://127.0.0.1:1080"
       })
     } as never);
     const agent = await createAuthenticatedAgent();
@@ -39,19 +39,17 @@ describe("settings routes", () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({
       defaultPageSize: 20,
-      sessionHours: 12,
-      qqOpSocksProxyPool: ""
+      sessionHours: 12
     });
+    expect(response.body).not.toHaveProperty("qqOpSocksProxyPool");
   });
 
-  it("saves the multiline QQ proxy pool", async () => {
+  it("rejects the removed QQ proxy pool field", async () => {
     vi.spyOn(SettingModel, "findOneAndUpdate").mockReturnValue({
       lean: async () => ({
         key: "admin",
         defaultPageSize: 50,
-        sessionHours: 24,
-        qqOpSocksProxyPool:
-          "127.0.0.1:1080\n198.64.244.205:50101:tztright:t5sYiBK8tD"
+        sessionHours: 24
       })
     } as never);
     const agent = await createAuthenticatedAgent();
@@ -59,15 +57,9 @@ describe("settings routes", () => {
     const response = await agent.patch("/api/settings").send({
       defaultPageSize: 50,
       sessionHours: 24,
-      qqOpSocksProxyPool: "127.0.0.1:1080\n198.64.244.205:50101:tztright:t5sYiBK8tD"
+      qqOpSocksProxyPool: "socks5://127.0.0.1:1080"
     });
 
-    expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({
-      defaultPageSize: 50,
-      sessionHours: 24,
-      qqOpSocksProxyPool:
-        "127.0.0.1:1080\n198.64.244.205:50101:tztright:t5sYiBK8tD"
-    });
+    expect(response.status).toBe(400);
   });
 });

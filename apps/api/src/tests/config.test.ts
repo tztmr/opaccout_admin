@@ -27,7 +27,7 @@ describe("loadConfig", () => {
     );
     expect(config.qqOpAppId).toBe("1105602870");
     expect(config.qqOpProfileTimeoutMs).toBe(5000);
-    expect(config.qqOpSocksProxyUrls).toEqual([]);
+    expect(config).not.toHaveProperty("qqOpSocksProxyUrls");
   });
 
   it("does not load obsolete administrator credentials", () => {
@@ -85,50 +85,12 @@ describe("loadConfig", () => {
     ).toThrow();
   });
 
-  it("loads an optional QQ OP SOCKS proxy URL", () => {
+  it("ignores the obsolete QQ OP SOCKS proxy environment variable", () => {
     const config = loadConfig({
       ...validEnv,
       QQ_OP_SOCKS_PROXY_URL: "socks5://127.0.0.1:1080"
     });
 
-    expect(config.qqOpSocksProxyUrls.map((item) => item.href))
-      .toEqual(["socks5://127.0.0.1:1080"]);
-  });
-
-  it("supports a QQ OP SOCKS proxy pool in mixed formats", () => {
-    const config = loadConfig({
-      ...validEnv,
-      QQ_OP_SOCKS_PROXY_URL: [
-        "198.64.244.205:50101:tztright:t5sYiBK8tD",
-        "127.0.0.1:1081",
-        "user:pass@10.0.0.2:9000",
-        "socks5://127.0.0.1:1082"
-      ].join(",")
-    });
-
-    expect(config.qqOpSocksProxyUrls.map((item) => item.href)).toEqual([
-      "socks5://tztright:t5sYiBK8tD@198.64.244.205:50101",
-      "socks5://127.0.0.1:1081",
-      "socks5://user:pass@10.0.0.2:9000",
-      "socks5://127.0.0.1:1082"
-    ]);
-  });
-
-  it("rejects a non-SOCKS QQ OP proxy URL", () => {
-    expect(() =>
-      loadConfig({
-        ...validEnv,
-        QQ_OP_SOCKS_PROXY_URL: "http://127.0.0.1:1080"
-      })
-    ).toThrow("QQ_OP_SOCKS_PROXY_URL");
-  });
-
-  it("rejects malformed bare QQ OP proxy entries", () => {
-    expect(() =>
-      loadConfig({
-        ...validEnv,
-        QQ_OP_SOCKS_PROXY_URL: "127.0.0.1:1080:user-only"
-      })
-    ).toThrow("QQ_OP_SOCKS_PROXY_URL");
+    expect(config).not.toHaveProperty("qqOpSocksProxyUrls");
   });
 });

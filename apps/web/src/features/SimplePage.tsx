@@ -19,7 +19,6 @@ type AuditLog = {
 type Settings = {
   defaultPageSize: number;
   sessionHours: number;
-  qqOpSocksProxyPool: string;
   updatedAt?: string;
 };
 
@@ -72,18 +71,16 @@ function SettingsPage() {
     const data = new FormData(event.currentTarget);
     mutation.mutate({
       defaultPageSize: Number(data.get("defaultPageSize")),
-      sessionHours: Number(data.get("sessionHours")),
-      qqOpSocksProxyPool: String(data.get("qqOpSocksProxyPool") ?? "")
+      sessionHours: Number(data.get("sessionHours"))
     });
   };
   return <section>
     <header className="page-head"><div><h1>系统设置</h1><p>调整后台列表和登录会话的基础参数</p></div></header>
-    <form className="settings-card" onSubmit={submit} key={query.data ? `${query.data.updatedAt ?? "loaded"}-${query.data.defaultPageSize}-${query.data.sessionHours}-${query.data.qqOpSocksProxyPool}` : "loading"}>
+    <form className="settings-card" onSubmit={submit} key={query.data ? `${query.data.updatedAt ?? "loaded"}-${query.data.defaultPageSize}-${query.data.sessionHours}` : "loading"}>
       <div><h2>后台偏好</h2><p>管理员账号和密码在首次注册后加密保存在 MongoDB 中，不会显示在页面中。</p></div>
       {notice&&<div className="notice-static">{notice}</div>}
       <label>默认每页条数<input type="number" name="defaultPageSize" min={10} max={100} defaultValue={query.data?.defaultPageSize??20} disabled={query.isLoading}/><small>范围 10–100 条</small></label>
       <label>登录会话时长<input type="number" name="sessionHours" min={1} max={168} defaultValue={query.data?.sessionHours??12} disabled={query.isLoading}/><small>范围 1–168 小时</small></label>
-      <label>QQ OP SOCKS 代理池<textarea name="qqOpSocksProxyPool" defaultValue={query.data?.qqOpSocksProxyPool??""} disabled={query.isLoading} placeholder={"一行一个代理\n127.0.0.1:1080\n198.64.244.205:50101:tztright:t5sYiBK8tD"}/><small>一行一个代理。留空时回退到部署环境中的默认代理池。</small></label>
       <button className="primary" disabled={mutation.isPending||query.isLoading}><Save size={16}/>{mutation.isPending?"保存中…":"保存设置"}</button>
     </form>
   </section>;

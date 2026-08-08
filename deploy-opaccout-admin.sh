@@ -299,6 +299,23 @@ set_env_value() {
   rm -f "$tmp_file"
 }
 
+remove_env_key() {
+  local env_file="$1" key="$2"
+  local tmp_file
+  [[ -f "$env_file" ]] || return 0
+  tmp_file="$(mktemp)" || return 1
+
+  if ! awk -v key="$key" 'index($0, key "=") != 1' "$env_file" > "$tmp_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  if ! install -m 0600 "$tmp_file" "$env_file"; then
+    rm -f "$tmp_file"
+    return 1
+  fi
+  rm -f "$tmp_file"
+}
+
 random_alnum() {
   LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "${1:-32}" || true
 }
@@ -562,7 +579,7 @@ configure_env() {
   info "配置环境变量 (.env)"
 
   local current_session current_encrypt current_mongo_user current_mongo_pass current_mongo_db
-  local current_douyin_api current_douyin_profile current_qq_api current_qq_socks current_qq_app_id current_qq_timeout current_web_port current_tz current_cookie_secure
+  local current_douyin_api current_douyin_profile current_qq_api current_qq_app_id current_qq_timeout current_web_port current_tz current_cookie_secure
 
   current_session="$(read_env_value "$env_file" "SESSION_SECRET")"
   current_encrypt="$(read_env_value "$env_file" "FIELD_ENCRYPTION_KEY")"
@@ -572,7 +589,6 @@ configure_env() {
   current_douyin_api="$(read_env_value "$env_file" "DOUYIN_CHECK_API_URL")"
   current_douyin_profile="$(read_env_value "$env_file" "DOUYIN_PROFILE_API_URL")"
   current_qq_api="$(read_env_value "$env_file" "QQ_OP_PROFILE_API_URL")"
-  current_qq_socks="$(read_env_value "$env_file" "QQ_OP_SOCKS_PROXY_URL")"
   current_qq_app_id="$(read_env_value "$env_file" "QQ_OP_APP_ID")"
   current_qq_timeout="$(read_env_value "$env_file" "QQ_OP_PROFILE_TIMEOUT_MS")"
   current_web_port="$(read_env_value "$env_file" "WEB_PORT")"
@@ -587,7 +603,6 @@ configure_env() {
   [[ -z "$current_douyin_api" ]] && current_douyin_api="$(read_env_value "$example_file" "DOUYIN_CHECK_API_URL")"
   [[ -z "$current_douyin_profile" ]] && current_douyin_profile="$(read_env_value "$example_file" "DOUYIN_PROFILE_API_URL")"
   [[ -z "$current_qq_api" ]] && current_qq_api="$(read_env_value "$example_file" "QQ_OP_PROFILE_API_URL")"
-  [[ -z "$current_qq_socks" ]] && current_qq_socks="$(read_env_value "$example_file" "QQ_OP_SOCKS_PROXY_URL")"
   [[ -z "$current_qq_app_id" ]] && current_qq_app_id="$(read_env_value "$example_file" "QQ_OP_APP_ID")"
   [[ -z "$current_qq_timeout" ]] && current_qq_timeout="$(read_env_value "$example_file" "QQ_OP_PROFILE_TIMEOUT_MS")"
   [[ -z "$current_web_port" ]] && current_web_port="$(read_env_value "$example_file" "WEB_PORT")"
@@ -599,7 +614,6 @@ configure_env() {
   current_douyin_api="${current_douyin_api:-https://unid.tztright.top/check}"
   current_qq_api="${current_qq_api:-https://graph.qq.com/user/get_simple_userinfo}"
   current_douyin_profile="${current_douyin_profile:-https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/}"
-  current_qq_socks="${current_qq_socks:-}"
   current_qq_app_id="${current_qq_app_id:-1105602870}"
   current_qq_timeout="${current_qq_timeout:-5000}"
   current_web_port="${current_web_port:-8080}"
@@ -607,7 +621,7 @@ configure_env() {
   current_cookie_secure="${current_cookie_secure:-false}"
 
   local new_mongo_user new_mongo_pass new_mongo_db new_session new_encrypt
-  local new_douyin_api new_douyin_profile new_qq_api new_qq_socks new_qq_app_id new_qq_timeout new_web_port new_tz new_cookie_secure
+  local new_douyin_api new_douyin_profile new_qq_api new_qq_app_id new_qq_timeout new_web_port new_tz new_cookie_secure
 
   new_mongo_user="$(prompt_default "MongoDB 超级用户名 (MONGO_ROOT_USERNAME)" "$current_mongo_user")"
   new_mongo_pass="$(prompt_default "MongoDB 超级密码 (MONGO_ROOT_PASSWORD)" "$current_mongo_pass")"
@@ -617,7 +631,6 @@ configure_env() {
   new_douyin_api="$(prompt_default "抖音检测接口 (DOUYIN_CHECK_API_URL)" "$current_douyin_api")"
   new_douyin_profile="$(prompt_default "抖音资料接口 (DOUYIN_PROFILE_API_URL)" "$current_douyin_profile")"
   new_qq_api="$(prompt_default "QQ OP 查询接口 (QQ_OP_PROFILE_API_URL)" "$current_qq_api")"
-  new_qq_socks="$(prompt_default "QQ OP SOCKS 代理/代理池 (QQ_OP_SOCKS_PROXY_URL)" "$current_qq_socks")"
   new_qq_app_id="$(prompt_default "QQ OP App ID (QQ_OP_APP_ID)" "$current_qq_app_id")"
   new_qq_timeout="$(prompt_default "QQ OP 超时毫秒 (QQ_OP_PROFILE_TIMEOUT_MS)" "$current_qq_timeout")"
   new_web_port="$(prompt_default "Web 暴露端口 (WEB_PORT)" "$current_web_port")"
@@ -653,7 +666,6 @@ MONGO_DATABASE=${new_mongo_db}
 DOUYIN_CHECK_API_URL=${new_douyin_api}
 DOUYIN_PROFILE_API_URL=${new_douyin_profile}
 QQ_OP_PROFILE_API_URL=${new_qq_api}
-QQ_OP_SOCKS_PROXY_URL=${new_qq_socks}
 QQ_OP_APP_ID=${new_qq_app_id}
 QQ_OP_PROFILE_TIMEOUT_MS=${new_qq_timeout}
 WEB_PORT=${new_web_port}
@@ -741,6 +753,7 @@ rebuild_app() {
 
   sync_project_code "$PROJECT_DIR" "$REPO_URL" "$BRANCH"
   assert_project_layout
+  remove_env_key "${PROJECT_DIR}/.env" "QQ_OP_SOCKS_PROXY_URL"
 
   info "重新构建并部署容器"
   (

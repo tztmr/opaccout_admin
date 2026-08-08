@@ -273,6 +273,41 @@ test("publishes the Web container only to the local outer Nginx", () => {
   assert.match(executable, /- "127\.0\.0\.1:\$\{WEB_PORT:-8080\}:8080"/);
 });
 
+test("removes only the retired QQ OP proxy key from an existing env file", () => {
+  const workDir = mkdtempSync(join(tmpdir(), "deploy-env-migration-"));
+  const envPath = join(workDir, ".env");
+
+  try {
+    writeFileSync(
+      envPath,
+      [
+        "SESSION_SECRET=keep-me",
+        "QQ_OP_SOCKS_PROXY_URL=socks5://legacy-user:legacy-password@example.invalid:1080",
+        "QQ_OP_SOCKS_PROXY_URL_BACKUP=keep-this-too",
+        "WEB_PORT=8080",
+        ""
+      ].join("\n")
+    );
+
+    runTestableDeployScript(
+      'source "$1"; remove_env_key "$2" "QQ_OP_SOCKS_PROXY_URL"',
+      [envPath]
+    );
+
+    assert.equal(
+      readFileSync(envPath, "utf8"),
+      [
+        "SESSION_SECRET=keep-me",
+        "QQ_OP_SOCKS_PROXY_URL_BACKUP=keep-this-too",
+        "WEB_PORT=8080",
+        ""
+      ].join("\n")
+    );
+  } finally {
+    rmSync(workDir, { recursive: true, force: true });
+  }
+});
+
 test("container Nginx preserves the controlled proxy chain before the API", () => {
   const nginx = readFileSync(join(repositoryRoot, "apps/web/nginx.conf"), "utf8");
   const executable = nginx

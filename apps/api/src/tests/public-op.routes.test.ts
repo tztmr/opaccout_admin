@@ -194,7 +194,7 @@ describe("public short OP service", () => {
     for (const item of cases) {
       const service = createService({
         account: item.account,
-        decrypt: item.decrypt,
+        ...(item.decrypt ? { decrypt: item.decrypt } : {}),
         checkOpProfile: item.checkOpProfile
       });
       await expect(service.resolve("123456789")).resolves.toBeNull();
