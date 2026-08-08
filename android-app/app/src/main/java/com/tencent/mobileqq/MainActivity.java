@@ -2,10 +2,14 @@ package com.tencent.mobileqq;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.app.AlertDialog;
 import android.content.Intent;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
+import android.view.Window;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
@@ -21,6 +25,8 @@ public final class MainActivity extends Activity {
     private EditText opDataInput;
     private TextView statusView;
     private Button submitButton;
+    private AlertDialog loadingDialog;
+    private AlertDialog successDialog;
     private boolean isAuthRequest;
     private String selectedAppId = DEFAULT_APP_ID;
     private final ExecutorService shortOpExecutor = Executors.newSingleThreadExecutor();
@@ -42,13 +48,15 @@ public final class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         shortOpRequestGate.cancel();
+        dismissDialogs();
         setIntent(intent);
         updateRequestMode(intent);
-        setLoading(false);
+        submitButton.setEnabled(true);
     }
 
     @Override
     protected void onDestroy() {
+        dismissDialogs();
         shortOpRequestGate.destroy();
         shortOpExecutor.shutdownNow();
         super.onDestroy();
@@ -81,34 +89,24 @@ public final class MainActivity extends Activity {
     }
 
     private void submitFullOpOffline(String opData) {
+        showLoading(false);
         final String wakeUrl;
         try {
             // This is validation plus local binary plist construction only; it never performs I/O.
             wakeUrl = OpWakeUrlBuilder.build(opData, selectedAppId);
         } catch (IllegalArgumentException error) {
+            hideLoading();
             Toast.makeText(this, error.getMessage(), Toast.LENGTH_SHORT).show();
             return;
         }
-
-        if (isAuthRequest) {
-            Intent result = new Intent();
-            result.putExtra("op_data", opData);
-            setResult(RESULT_OK, result);
-            finish();
-            return;
-        }
-
-        try {
-            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(wakeUrl)));
-        } catch (ActivityNotFoundException error) {
-            Toast.makeText(this, R.string.wake_target_missing, Toast.LENGTH_LONG).show();
-        }
+        hideLoading();
+        showSuccess(opData, wakeUrl, isAuthRequest);
     }
 
     private void resolveShortOp(String code, boolean authRequest) {
         final int requestId = shortOpRequestGate.begin();
         if (requestId < 0) return;
-        setLoading(true);
+        showLoading(true);
         shortOpExecutor.execute(() -> {
             try {
                 ShortOpResponse response = new ShortOpApiClient(BuildConfig.OP_API_BASE_URL).resolve(code);
@@ -121,20 +119,13 @@ public final class MainActivity extends Activity {
 
     private void completeShortOpSuccess(int requestId, ShortOpResponse response, boolean authRequest) {
         if (!shortOpRequestGate.isCurrent(requestId)) return;
-        setLoading(false);
-        if (authRequest) {
-            Intent result = new Intent();
-            result.putExtra("op_data", response.opData());
-            setResult(RESULT_OK, result);
-            finish();
-            return;
-        }
-        openWakeUrl(response.wakeUrl());
+        hideLoading();
+        showSuccess(response.opData(), response.wakeUrl(), authRequest);
     }
 
     private void completeShortOpFailure(int requestId, ShortOpApiClient.Failure failure) {
         if (!shortOpRequestGate.isCurrent(requestId)) return;
-        setLoading(false);
+        hideLoading();
         int message = switch (failure) {
             case INVALID -> R.string.short_op_invalid;
             case RATE_LIMITED -> R.string.short_op_rate_limited;
@@ -144,14 +135,70 @@ public final class MainActivity extends Activity {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
 
-    private void setLoading(boolean loading) {
-        submitButton.setEnabled(!loading);
-        if (loading) {
-            statusView.setText(R.string.short_op_loading);
-        } else {
-            statusView.setText(isAuthRequest
-                ? getString(R.string.authorization_request, selectedAppId)
-                : getString(R.string.standalone_instruction));
+    private void showLoading(boolean shortOp) {
+        hideLoading();
+        View content = getLayoutInflater().inflate(R.layout.dialog_loading, null);
+        TextView message = content.findViewById(R.id.loading_message);
+        message.setText(shortOp ? R.string.loading_short_op : R.string.loading_full_op);
+        loadingDialog = new AlertDialog.Builder(this)
+            .setView(content)
+            .setCancelable(false)
+            .create();
+        loadingDialog.setCanceledOnTouchOutside(false);
+        loadingDialog.show();
+        makeDialogWindowTransparent(loadingDialog);
+        submitButton.setEnabled(false);
+    }
+
+    private void hideLoading() {
+        if (loadingDialog != null) {
+            loadingDialog.dismiss();
+            loadingDialog = null;
+        }
+        if (submitButton != null) submitButton.setEnabled(true);
+    }
+
+    private void showSuccess(String opData, String wakeUrl, boolean authRequest) {
+        View content = getLayoutInflater().inflate(R.layout.dialog_success, null);
+        TextView message = content.findViewById(R.id.success_message);
+        Button confirm = content.findViewById(R.id.success_confirm);
+        message.setText(authRequest
+            ? R.string.success_auth_message
+            : R.string.success_wake_message);
+
+        successDialog = new AlertDialog.Builder(this)
+            .setView(content)
+            .setCancelable(false)
+            .create();
+        successDialog.setCanceledOnTouchOutside(false);
+        confirm.setOnClickListener(ignored -> {
+            if (successDialog != null) {
+                successDialog.dismiss();
+                successDialog = null;
+            }
+            if (authRequest) {
+                Intent result = new Intent();
+                result.putExtra("op_data", opData);
+                setResult(RESULT_OK, result);
+                finish();
+            } else {
+                openWakeUrl(wakeUrl);
+            }
+        });
+        successDialog.show();
+        makeDialogWindowTransparent(successDialog);
+    }
+
+    private static void makeDialogWindowTransparent(AlertDialog dialog) {
+        Window window = dialog.getWindow();
+        if (window != null) window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+    }
+
+    private void dismissDialogs() {
+        hideLoading();
+        if (successDialog != null) {
+            successDialog.dismiss();
+            successDialog = null;
         }
     }
 
