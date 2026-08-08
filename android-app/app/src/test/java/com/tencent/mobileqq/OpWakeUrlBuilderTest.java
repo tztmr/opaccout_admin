@@ -23,6 +23,7 @@ public class OpWakeUrlBuilderTest {
         acceptsThreeToFiveNonEmptySegments();
         rejectsMalformedOrIncompleteOpSegments();
         rejectsNonNumericAppIds();
+        matchesStandardBase64AcrossPaddingBoundaries();
         declaresARegularLauncherIcon();
         System.out.println("OpWakeUrlBuilder offline contract passed");
     }
@@ -85,6 +86,23 @@ public class OpWakeUrlBuilderTest {
 
     private static void rejectsNonNumericAppIds() {
         assertInvalidAppId();
+    }
+
+    private static void matchesStandardBase64AcrossPaddingBoundaries() {
+        byte[][] fixtures = {
+            new byte[] {},
+            new byte[] { 0 },
+            new byte[] { 0, 1 },
+            new byte[] { 0, 1, 2 },
+            new byte[] { 0, 1, 2, (byte) 0xFF }
+        };
+        for (byte[] fixture : fixtures) {
+            requireEquals(
+                Base64.getEncoder().encodeToString(fixture),
+                OpWakeUrlBuilder.encodeBase64(fixture),
+                "API 24 encoder must match standard Base64"
+            );
+        }
     }
 
     private static void declaresARegularLauncherIcon() throws Exception {

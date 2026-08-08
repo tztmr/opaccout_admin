@@ -1,10 +1,10 @@
 package com.tencent.mobileqq;
 
 import java.io.ByteArrayOutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -14,6 +14,8 @@ import java.util.Map;
 public final class OpWakeUrlBuilder {
     private static final String DEFAULT_ENCRY_TOKEN = "dd02c11302e09f85400b834bbd3ac04d";
     private static final String DEFAULT_PFKEY = "65d0a30bedbc73f53d8370141e6220df";
+    private static final char[] BASE64 =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".toCharArray();
 
     private OpWakeUrlBuilder() {}
 
@@ -24,10 +26,34 @@ public final class OpWakeUrlBuilder {
         }
 
         OpToken token = parse(opData);
-        String pasteboard = Base64.getEncoder().encodeToString(writeBinaryPlist(buildPasteboard(token)));
+        String pasteboard = encodeBase64(writeBinaryPlist(buildPasteboard(token)));
         return "tencent" + normalizedAppId
             + "://qzapp/mqzone/0?objectlocation=url&pasteboard="
-            + URLEncoder.encode(pasteboard, StandardCharsets.UTF_8);
+            + urlEncode(pasteboard);
+    }
+
+    static String encodeBase64(byte[] value) {
+        StringBuilder encoded = new StringBuilder(((value.length + 2) / 3) * 4);
+        for (int index = 0; index < value.length; index += 3) {
+            int first = value[index] & 0xFF;
+            int second = index + 1 < value.length ? value[index + 1] & 0xFF : 0;
+            int third = index + 2 < value.length ? value[index + 2] & 0xFF : 0;
+            encoded.append(BASE64[first >>> 2]);
+            encoded.append(BASE64[((first & 0x03) << 4) | (second >>> 4)]);
+            encoded.append(index + 1 < value.length
+                ? BASE64[((second & 0x0F) << 2) | (third >>> 6)]
+                : '=');
+            encoded.append(index + 2 < value.length ? BASE64[third & 0x3F] : '=');
+        }
+        return encoded.toString();
+    }
+
+    private static String urlEncode(String value) {
+        try {
+            return URLEncoder.encode(value, "UTF-8");
+        } catch (UnsupportedEncodingException impossible) {
+            throw new AssertionError(impossible);
+        }
     }
 
     private static OpToken parse(String input) {
@@ -135,9 +161,9 @@ public final class OpWakeUrlBuilder {
 
         int offsetSize = byteSize(offset);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        output.writeBytes("bplist00".getBytes(StandardCharsets.US_ASCII));
-        for (byte[] encoded : encodedObjects) output.writeBytes(encoded);
-        for (int item : offsets) output.writeBytes(unsignedInteger(item, offsetSize));
+        append(output, "bplist00".getBytes(StandardCharsets.US_ASCII));
+        for (byte[] encoded : encodedObjects) append(output, encoded);
+        for (int item : offsets) append(output, unsignedInteger(item, offsetSize));
 
         byte[] trailer = new byte[32];
         trailer[6] = (byte) offsetSize;
@@ -145,7 +171,7 @@ public final class OpWakeUrlBuilder {
         writeUnsigned(trailer, 8, objects.size(), 8);
         writeUnsigned(trailer, 16, 0, 8);
         writeUnsigned(trailer, 24, offset, 8);
-        output.writeBytes(trailer);
+        append(output, trailer);
         return output.toByteArray();
     }
 
@@ -188,16 +214,16 @@ public final class OpWakeUrlBuilder {
         if (value instanceof List<?>) {
             List<?> values = (List<?>) value;
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            output.writeBytes(encodeCount(0xA0, values.size()));
-            for (Object item : values) output.writeBytes(unsignedInteger(refFor(item, identities, primitiveIndexes), refSize));
+            append(output, encodeCount(0xA0, values.size()));
+            for (Object item : values) append(output, unsignedInteger(refFor(item, identities, primitiveIndexes), refSize));
             return output.toByteArray();
         }
         if (value instanceof Map<?, ?>) {
             Map<?, ?> dictionary = (Map<?, ?>) value;
             ByteArrayOutputStream output = new ByteArrayOutputStream();
-            output.writeBytes(encodeCount(0xD0, dictionary.size()));
-            for (Object key : dictionary.keySet()) output.writeBytes(unsignedInteger(refFor(key, identities, primitiveIndexes), refSize));
-            for (Object item : dictionary.values()) output.writeBytes(unsignedInteger(refFor(item, identities, primitiveIndexes), refSize));
+            append(output, encodeCount(0xD0, dictionary.size()));
+            for (Object key : dictionary.keySet()) append(output, unsignedInteger(refFor(key, identities, primitiveIndexes), refSize));
+            for (Object item : dictionary.values()) append(output, unsignedInteger(refFor(item, identities, primitiveIndexes), refSize));
             return output.toByteArray();
         }
         return new byte[] { 0 };
@@ -222,8 +248,8 @@ public final class OpWakeUrlBuilder {
     private static byte[] encodeAsciiString(String value) {
         byte[] data = value.getBytes(StandardCharsets.US_ASCII);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        output.writeBytes(encodeCount(0x50, data.length));
-        output.writeBytes(data);
+        append(output, encodeCount(0x50, data.length));
+        append(output, data);
         return output.toByteArray();
     }
 
@@ -231,7 +257,7 @@ public final class OpWakeUrlBuilder {
         int size = byteSize(value);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         output.write(0x10 + log2(size));
-        output.writeBytes(unsignedInteger(value, size));
+        append(output, unsignedInteger(value, size));
         return output.toByteArray();
     }
 
@@ -239,7 +265,7 @@ public final class OpWakeUrlBuilder {
         int size = byteSize(value);
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         output.write(0x80 + size - 1);
-        output.writeBytes(unsignedInteger(value, size));
+        append(output, unsignedInteger(value, size));
         return output.toByteArray();
     }
 
@@ -247,8 +273,12 @@ public final class OpWakeUrlBuilder {
         if (count < 15) return new byte[] { (byte) (markerBase + count) };
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         output.write(markerBase + 15);
-        output.writeBytes(encodeInteger(count));
+        append(output, encodeInteger(count));
         return output.toByteArray();
+    }
+
+    private static void append(ByteArrayOutputStream output, byte[] value) {
+        output.write(value, 0, value.length);
     }
 
     private static int byteSize(long value) {

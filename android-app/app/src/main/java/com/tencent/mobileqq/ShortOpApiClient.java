@@ -11,11 +11,14 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
+import java.text.ParsePosition;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.TimeZone;
 
 import javax.net.ssl.HttpsURLConnection;
 
@@ -106,11 +109,7 @@ public final class ShortOpApiClient {
             String expiresAt = value(root, "expiresAt");
             String wakeUrl = value(root, "wakeUrl");
             if (!isShortOp(code) || !isValidOpData(opData)) throw invalid();
-            try {
-                Instant.parse(expiresAt);
-            } catch (DateTimeParseException error) {
-                throw invalid();
-            }
+            if (!isStrictIsoInstant(expiresAt)) throw invalid();
             Object projectValue = root.get("project");
             if (!(projectValue instanceof Map<?, ?>)) throw invalid();
             @SuppressWarnings("unchecked") Map<String, Object> project = (Map<String, Object>) projectValue;
@@ -155,8 +154,21 @@ public final class ShortOpApiClient {
             byte[] buffer = new byte[1024];
             int count;
             while ((count = source.read(buffer)) != -1) output.write(buffer, 0, count);
-            return output.toString(StandardCharsets.UTF_8);
+            return new String(output.toByteArray(), StandardCharsets.UTF_8);
         }
+    }
+
+    static boolean isStrictIsoInstant(String value) {
+        if (value == null
+            || !value.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$")) {
+            return false;
+        }
+        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT);
+        format.setLenient(false);
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        ParsePosition position = new ParsePosition(0);
+        Date parsed = format.parse(value, position);
+        return parsed != null && position.getIndex() == value.length();
     }
 
     private static String value(Map<String, Object> object, String key) throws ResolveException {

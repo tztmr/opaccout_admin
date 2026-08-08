@@ -11,6 +11,14 @@ if (!(opApiBaseUrl ==~ '^https://[^/?#]+(?:/[^?#]*)?$')) {
     throw new GradleException('opApiBaseUrl must be an absolute HTTPS base URL without query or fragment')
 }
 
+def applicationIdOverride = providers.gradleProperty('applicationIdOverride')
+    .getOrElse('com.tencent.mobileqq')
+    .trim()
+
+if (!(applicationIdOverride ==~ '^[a-zA-Z][a-zA-Z0-9_]*(?:\\.[a-zA-Z][a-zA-Z0-9_]*)+$')) {
+    throw new GradleException('applicationIdOverride must be a valid Java-style application ID')
+}
+
 android {
     namespace 'com.tencent.mobileqq'
     compileSdk 34
@@ -20,11 +28,11 @@ android {
     }
 
     defaultConfig {
-        applicationId 'com.tencent.mobileqq'
+        applicationId applicationIdOverride
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName '1.0.0'
+        versionCode 2600
+        versionName '9.0.1'
         buildConfigField 'String', 'OP_API_BASE_URL', "\"${opApiBaseUrl}\""
     }
 

@@ -15,6 +15,7 @@ public final class ShortOpApiClientTest {
         recognizesOnlyNineDigitNonZeroCodes();
         postsStrictJsonToTheNormalizedHttpsResolveEndpoint();
         parsesOnlyTheExpectedDouyinResponse();
+        acceptsOnlyServerIsoInstantShape();
         rejectsUnsafeOrMalformedSuccessResponses();
         mapsPublicApiAndNetworkFailuresWithoutLeakingResponseData();
         rejectsNonHttpsBaseUrls();
@@ -52,6 +53,13 @@ public final class ShortOpApiClientTest {
         requireEquals("123456789", response.code(), "response code must be preserved");
         requireEquals("open|access|pay", response.opData(), "response OP data must be preserved");
         requireEquals("tencent1105602870://qzapp/mqzone/0?objectlocation=url&pasteboard=fixture", response.wakeUrl(), "trusted wake URL must be preserved");
+    }
+
+    private static void acceptsOnlyServerIsoInstantShape() {
+        require(ShortOpApiClient.isStrictIsoInstant("2026-08-23T12:16:58.000Z"), "server ISO timestamp must pass");
+        require(!ShortOpApiClient.isStrictIsoInstant("2026-02-30T12:16:58.000Z"), "invalid calendar date must fail");
+        require(!ShortOpApiClient.isStrictIsoInstant("2026-08-23T12:16:58Z"), "missing milliseconds must fail");
+        require(!ShortOpApiClient.isStrictIsoInstant("2026-08-23 12:16:58.000Z"), "non-ISO separator must fail");
     }
 
     private static void rejectsUnsafeOrMalformedSuccessResponses() {
