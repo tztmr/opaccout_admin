@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.app.Instrumentation;
 import android.content.Intent;
+import android.os.SystemClock;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.Button;
 import android.widget.EditText;
@@ -18,11 +19,63 @@ import androidx.test.platform.app.InstrumentationRegistry;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 @RunWith(AndroidJUnit4.class)
 public final class MainActivityInstrumentedTest {
 
     private static final String FIXTURE_OP =
         "fixture-openid|fixture-access|fixture-pay|fixture-pfkey|1782303418";
+
+    @Test
+    public void blankInputStaysOnScreenAndRestoresSubmitButton() {
+        try (ActivityScenario<MainActivity> scenario = launch(false)) {
+            scenario.onActivity(activity -> {
+                Button submit = activity.findViewById(R.id.submit);
+                submit.performClick();
+                assertFalse("blank input must not finish activity", activity.isFinishing());
+                assertTrue("blank input must leave submit enabled", submit.isEnabled());
+            });
+        }
+    }
+
+    @Test
+    public void malformedFullOpStaysOnScreenAndRestoresSubmitButton() {
+        try (ActivityScenario<MainActivity> scenario = launch(false)) {
+            scenario.onActivity(activity -> {
+                EditText input = activity.findViewById(R.id.op_data_input);
+                Button submit = activity.findViewById(R.id.submit);
+                input.setText("malformed-op");
+                submit.performClick();
+                assertFalse("invalid OP must not finish activity", activity.isFinishing());
+                assertTrue("invalid OP must leave submit enabled", submit.isEnabled());
+            });
+        }
+    }
+
+    @Test
+    public void shortOpOfflineFailureRestoresSubmitButton() {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        try (ActivityScenario<MainActivity> scenario = launch(false)) {
+            scenario.onActivity(activity -> {
+                EditText input = activity.findViewById(R.id.op_data_input);
+                Button submit = activity.findViewById(R.id.submit);
+                input.setText("123456789");
+                submit.performClick();
+                assertFalse("short OP request must disable duplicate submit", submit.isEnabled());
+            });
+
+            AtomicBoolean enabled = new AtomicBoolean(false);
+            long deadline = SystemClock.uptimeMillis() + 5_000L;
+            while (!enabled.get() && SystemClock.uptimeMillis() < deadline) {
+                instrumentation.waitForIdleSync();
+                scenario.onActivity(activity ->
+                    enabled.set(activity.<Button>findViewById(R.id.submit).isEnabled()));
+                if (!enabled.get()) SystemClock.sleep(50L);
+            }
+            assertTrue("offline failure must restore submit within five seconds", enabled.get());
+        }
+    }
 
     @Test
     public void fullOpAuthorizationShowsSafeConfirmationBeforeReturning() {
@@ -31,11 +84,7 @@ public final class MainActivityInstrumentedTest {
         info.flags |= AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS;
         instrumentation.getUiAutomation().setServiceInfo(info);
 
-        Intent intent = new Intent(instrumentation.getTargetContext(), MainActivity.class);
-        intent.putExtra("is_auth_request", true);
-        intent.putExtra("appid", "1105602870");
-
-        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(intent)) {
+        try (ActivityScenario<MainActivity> scenario = launch(true)) {
             scenario.onActivity(activity -> {
                 EditText input = activity.findViewById(R.id.op_data_input);
                 Button submit = activity.findViewById(R.id.submit);
@@ -53,6 +102,14 @@ public final class MainActivityInstrumentedTest {
             assertFalse("dialog must not display openid", containsText(root, "fixture-openid"));
             assertFalse("dialog must not display access token", containsText(root, "fixture-access"));
         }
+    }
+
+    private static ActivityScenario<MainActivity> launch(boolean authRequest) {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        Intent intent = new Intent(instrumentation.getTargetContext(), MainActivity.class);
+        intent.putExtra("is_auth_request", authRequest);
+        intent.putExtra("appid", "1105602870");
+        return ActivityScenario.launch(intent);
     }
 
     private static boolean containsText(AccessibilityNodeInfo node, String expected) {
