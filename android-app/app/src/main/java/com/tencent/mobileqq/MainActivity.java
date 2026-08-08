@@ -40,6 +40,7 @@ public final class MainActivity extends Activity {
         opDataInput = findViewById(R.id.op_data_input);
         statusView = findViewById(R.id.status);
         submitButton = findViewById(R.id.submit);
+        applySharedText(getIntent());
         updateRequestMode(getIntent());
         submitButton.setOnClickListener(this::submit);
     }
@@ -50,6 +51,7 @@ public final class MainActivity extends Activity {
         shortOpRequestGate.cancel();
         dismissDialogs();
         setIntent(intent);
+        applySharedText(intent);
         updateRequestMode(intent);
         submitButton.setEnabled(true);
     }
@@ -71,6 +73,14 @@ public final class MainActivity extends Activity {
         statusView.setText(isAuthRequest
             ? getString(R.string.authorization_request, selectedAppId)
             : getString(R.string.standalone_instruction));
+    }
+
+    private void applySharedText(Intent intent) {
+        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
+        CharSequence sharedText = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+        if (sharedText == null) return;
+        String value = sharedText.toString().trim();
+        if (!value.isEmpty()) opDataInput.setText(value);
     }
 
     private void submit(View ignored) {

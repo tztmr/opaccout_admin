@@ -28,6 +28,23 @@ public final class MainActivityInstrumentedTest {
         "fixture-openid|fixture-access|fixture-pay|fixture-pfkey|1782303418";
 
     @Test
+    public void sharedPlainTextPrefillsOpInput() {
+        Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        Intent intent = new Intent(Intent.ACTION_SEND);
+        intent.setClass(instrumentation.getTargetContext(), MainActivity.class);
+        intent.setType("text/plain");
+        intent.putExtra(Intent.EXTRA_TEXT, "shared-openid|shared-access|shared-pay");
+
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(intent)) {
+            scenario.onActivity(activity -> {
+                EditText input = activity.findViewById(R.id.op_data_input);
+                assertTrue("shared OP text must prefill input",
+                    input.getText().toString().contains("shared-openid|shared-access|shared-pay"));
+            });
+        }
+    }
+
+    @Test
     public void blankInputStaysOnScreenAndRestoresSubmitButton() {
         try (ActivityScenario<MainActivity> scenario = launch(false)) {
             scenario.onActivity(activity -> {
