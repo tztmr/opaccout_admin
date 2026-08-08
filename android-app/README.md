@@ -1,7 +1,8 @@
 # OP Android 双模式授权壳
 
-这是账号管理项目的 Android 离线基线，包名和 application ID 固定为
-`com.tencent.mobileqq`，QQ 授权入口为 `com.tencent.open.agent.AgentActivity`。
+这是账号管理项目的 Android 双模式授权应用，默认 application ID 为
+`com.tencent.mobileqq`，QQ 授权入口为 `com.tencent.open.agent.AgentActivity`。主界面、加载框
+和成功确认框使用原版 OP 上号器的蓝白视觉层；确认框只展示处理状态，不回显 OP 或 Token。
 
 完整 OP 输入使用 `openid|access_token|pay_token` 起始的 3 到 5 个非空字段；在无网络
 情况下，APK 本地生成与服务端兼容的二进制 plist 唤醒链接。输入恰好匹配
@@ -10,7 +11,8 @@ OP。游戏通过 `AgentActivity` 调起时，成功结果按 QQ 回调协议放
 OP 直接使用本地输入，短 OP 使用解析响应中的 `opData`。独立启动时，完整 OP 本地生成
 唤醒链接，短 OP 使用响应中的 `wakeUrl`。
 
-应用声明 `android.permission.INTERNET`，但不允许明文流量（`usesCleartextTraffic=false`）。
+应用声明 `android.permission.INTERNET`，但不允许明文流量（`usesCleartextTraffic=false`），并
+明确禁止云备份和设备迁移备份。
 短 OP 请求只接受 HTTPS，连接和读取超时均为 8 秒；不会记录、持久化或复制 OP/解析响应。
 短 OP 解析失败不会向游戏返回空授权结果。
 
@@ -23,6 +25,7 @@ OP 直接使用本地输入，短 OP 使用解析响应中的 `opData`。独立�
 - Java 源/目标版本：17
 - compileSdk / targetSdk：34
 - minSdk：24
+- versionCode / versionName：2600 / 9.0.1
 - Gradle：9.3.1（wrapper）
 
 本机需要用未提交的 `local.properties` 指向 Android SDK：
@@ -31,12 +34,20 @@ OP 直接使用本地输入，短 OP 使用解析响应中的 `opData`。独立�
 sdk.dir=/path/to/Android/sdk
 ```
 
-只使用本机已缓存的依赖执行：
+执行单元测试、Lint 并构建 APK：
 
-```bash
+```shell
 cd android-app
-./gradlew --offline testDebugUnitTest assembleDebug \
+./gradlew testDebugUnitTest lintDebug assembleDebug \
   -PopApiBaseUrl=https://op.tztright.qzz.io
+```
+
+已连接测试设备时，可用独立 application ID 安装 QA 包，避免覆盖设备上的原版：
+
+```shell
+./gradlew connectedDebugAndroidTest \
+  -PapplicationIdOverride=com.edking.tkacc.opqa \
+  -PopApiBaseUrl=https://127.0.0.1
 ```
 
 默认 API 基址是 `https://op.tztright.qzz.io`。调试时可通过 `-PopApiBaseUrl` 覆盖为另一个
