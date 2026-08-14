@@ -137,8 +137,12 @@ Docker Compose 会将 Web 容器仅绑定到本机 `127.0.0.1:${WEB_PORT:-8080}`
 
 ### Android APK
 
-调试交付件为 `apks/tkacc-short-op-debug.apk`。它声明 `android.permission.INTERNET`，
-并拒绝明文 HTTP（`usesCleartextTraffic=false`），但完整 OP 的本地流程仍可离线使用：
+公开下载地址为 `https://op.tztright.qzz.io/downloads/short-op.apk`，页面使用同源相对链接 `/downloads/short-op.apk`。公开下载无需管理员登录，只允许 `GET` 和 `HEAD`。
+
+批准发布文件的 SHA-256 为 `04b2b747ee36eb9891cc64bff8e135431b2bf39daa8692d4d1f8a0bd8f8c36cd`。只有从公开地址成功执行 `GET`，并确认下载文件的 SHA-256 与该值一致，才证明生产部署完成。
+
+APK 声明 `android.permission.INTERNET`，并拒绝明文 HTTP（`usesCleartextTraffic=false`），
+但完整 OP 的本地流程仍可离线使用：
 
 - 输入完整 OP（3 至 5 段非空 `|` 分隔字段）时，APK 在本地生成唤醒链接；游戏授权调起时直接回传 `op_data`，不请求网络。
 - 输入匹配 `^[1-9][0-9]{8}$` 的短 OP 时，APK 通过公开 HTTPS API 解析；游戏授权调起时回传响应中的 `opData`，独立打开时使用响应中的 `wakeUrl`。
