@@ -274,6 +274,19 @@ td.check-cell {
   cursor: wait;
   opacity: .65;
 }
+.short-op-download {
+  min-height: 46px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cad3e2;
+  border-radius: 12px;
+  color: #354bc4;
+  background: #fff;
+  font-weight: 700;
+  text-decoration: none;
+}
 .short-op-message {
   min-height: 24px;
   margin: 14px 0 0;

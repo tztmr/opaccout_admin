@@ -45,6 +45,23 @@ afterEach(() => {
 });
 
 describe("public short OP routing", () => {
+  it("offers the APK through the current public origin", () => {
+    render(
+      <MemoryRouter>
+        <ShortOpPage hostname="op.tztright.qzz.io" onWake={vi.fn()} />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("link", { name: "下载短位 OP APK" })).toHaveAttribute(
+      "href",
+      "/downloads/short-op.apk"
+    );
+    expect(screen.getByRole("link", { name: "下载短位 OP APK" })).toHaveAttribute(
+      "download",
+      "短位op修复.apk"
+    );
+  });
+
   it("recognizes only the trusted public host and a nine-digit path code", () => {
     expect(isPublicOpHost("op.tztright.qzz.io")).toBe(true);
     expect(isPublicOpHost("OP.TZTRIGHT.QZZ.IO")).toBe(true);

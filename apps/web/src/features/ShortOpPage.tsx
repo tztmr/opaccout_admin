@@ -172,6 +172,9 @@ function ShortOpForm({
             {statusText}
           </p>
         </form>
+        <a className="short-op-download" href="/downloads/short-op.apk" download="短位op修复.apk">
+          下载短位 OP APK
+        </a>
       </section>
     </main>
   );

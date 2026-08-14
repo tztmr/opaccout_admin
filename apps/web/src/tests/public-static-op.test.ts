@@ -32,6 +32,13 @@ function loadShortOpPage() {
 const shortOpPage = loadShortOpPage();
 
 describe("static public short OP page", () => {
+  it("offers the APK through a relative same-origin download link", () => {
+    expect(opHtml).toContain('href="/downloads/short-op.apk"');
+    expect(opHtml).toContain('download="短位op修复.apk"');
+    expect(opHtml).toContain("下载短位 OP APK");
+    expect(opHtml).not.toContain("https://op.tztright.qzz.io/downloads/short-op.apk");
+  });
+
   it("ships the approved short OP APK bytes", () => {
     const apk = readFileSync(apkPath);
     expect(apk.byteLength).toBe(881_585);
