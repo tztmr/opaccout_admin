@@ -76,6 +76,15 @@ test("renders separate admin and public OP hosts with their intended boundaries"
   assert.match(admin, /proxy_set_header X-Forwarded-Proto \$scheme;/);
 
   assert.match(publicOp, /server_name op\.tztright\.qzz\.io;/);
+  assert.match(
+    publicOp,
+    /location = \/downloads\/short-op\.apk\s*\{[\s\S]*if \(\$request_method !~ \^\(GET\|HEAD\)\$\) \{ return 405; \}/
+  );
+  assert.match(
+    publicOp,
+    /location = \/downloads\/short-op\.apk\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/
+  );
+  assert.doesNotMatch(publicOp, /location \/downloads\//);
   assert.match(publicOp, /location = \/api\/op\/resolve\s*\{[\s\S]*if \(\$request_method != POST\) \{ return 405; \}/);
   assert.match(publicOp, /location = \/api\/op\/resolve\s*\{[\s\S]*proxy_pass http:\/\/127\.0\.0\.1:8080;/);
   assert.match(publicOp, /location \^~ \/api\/\s*\{\s*return 404;/);
