@@ -44,16 +44,51 @@ type BatchDialogState =
 type BatchRecheckResult = {
   succeeded: Array<{ _id: string }>;
   failed: Array<{ id: string; code: string }>;
+  skipped?: Array<{ id: string; code: string }>;
 };
 
-function summarizeBatchRecheck(result: BatchRecheckResult, kind: "account" | "op") {
+const BATCH_RECHECK_REQUEST_SIZE = 500;
+
+async function requestBatchRecheck(
+  path: "/api/accounts/batch-recheck" | "/api/accounts/batch-recheck-op",
+  ids: string[]
+): Promise<BatchRecheckResult> {
+  const aggregate: BatchRecheckResult = { succeeded: [], failed: [], skipped: [] };
+  for (let index = 0; index < ids.length; index += BATCH_RECHECK_REQUEST_SIZE) {
+    const batchIds = ids.slice(index, index + BATCH_RECHECK_REQUEST_SIZE);
+    let result: BatchRecheckResult;
+    try {
+      result = await api<BatchRecheckResult>(path, {
+        method: "POST",
+        body: JSON.stringify({ ids: batchIds })
+      });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "BATCH_REQUEST_FAILED";
+      aggregate.failed.push(
+        ...ids.slice(index).map((id) => ({ id, code }))
+      );
+      break;
+    }
+    aggregate.succeeded.push(...(result.succeeded ?? []));
+    aggregate.failed.push(...(result.failed ?? []));
+    aggregate.skipped?.push(...(result.skipped ?? []));
+  }
+  return aggregate;
+}
+
+function summarizeBatchRecheck(
+  result: BatchRecheckResult,
+  kind: "account" | "op",
+  locallySkipped = 0
+) {
   const label = kind === "op" ? "OP" : "账号";
   const succeeded = result.succeeded ?? [];
   const failed = result.failed ?? [];
-  if (!failed.length) {
-    return `已完成 ${succeeded.length} 条${label}检测`;
-  }
-  return `已完成 ${succeeded.length} 条${label}检测，失败 ${failed.length} 条，请重新检测失败项`;
+  const skipped = locallySkipped + (result.skipped?.length ?? 0);
+  const completed = failed.length
+    ? `已完成 ${succeeded.length} 条${label}检测，失败 ${failed.length} 条，请重新检测失败项`
+    : `已完成 ${succeeded.length} 条${label}检测`;
+  return skipped ? `${completed}，已跳过 ${skipped} 个封禁账号` : completed;
 }
 
 const URL_KEYWORD_MAX_LENGTH = 1500;
@@ -203,7 +238,7 @@ export function AccountsPage() {
     if(action==="delete"&&!confirm(`确定删除选中的 ${ids.length} 条账号吗？`))return;
     if(action==="recheck"){
       await runWithProgress(`正在检测 ${ids.length} 条账号…`, async()=>{
-        const result=await api<BatchRecheckResult>("/api/accounts/batch-recheck",{method:"POST",body:JSON.stringify({ids})});
+        const result=await requestBatchRecheck("/api/accounts/batch-recheck", ids);
         setMessage(summarizeBatchRecheck(result, "account"));
         if((result.failed ?? []).length){
           setSelected(new Set(result.failed.map((item)=>item.id)));
@@ -211,11 +246,24 @@ export function AccountsPage() {
       });
     }
     if(action==="recheckOp"){
-      await runWithProgress(`正在检测 ${ids.length} 条 OP…`, async()=>{
-        const result=await api<BatchRecheckResult>("/api/accounts/batch-recheck-op",{method:"POST",body:JSON.stringify({ids})});
-        setMessage(summarizeBatchRecheck(result, "op"));
+      const bannedIds = new Set(
+        (query.data?.items ?? [])
+          .filter((item) => selected.has(item._id) && item.accountStatus === "banned")
+          .map((item) => item._id)
+      );
+      const eligibleIds = ids.filter((id) => !bannedIds.has(id));
+      await runWithProgress(`正在检测 ${eligibleIds.length} 条 OP…`, async()=>{
+        const result = eligibleIds.length
+          ? await requestBatchRecheck("/api/accounts/batch-recheck-op", eligibleIds)
+          : { succeeded: [], failed: [], skipped: [] };
+        setMessage(summarizeBatchRecheck(result, "op", bannedIds.size));
         if((result.failed ?? []).length){
           setSelected(new Set(result.failed.map((item)=>item.id)));
+        } else {
+          const serverSkippedIds = new Set(
+            (result.skipped ?? []).map((item) => item.id)
+          );
+          setSelected(new Set(eligibleIds.filter((id) => !serverSkippedIds.has(id))));
         }
       });
     }
@@ -327,7 +375,7 @@ export function AccountsPage() {
       <tbody>{query.isLoading?<tr><td colSpan={16} className="empty">正在加载…</td></tr>:data?.items.length?data.items.map((row,index)=><tr key={row._id}>
         <td className="check-cell"><input aria-label={`选择账号 ${row.douyinId}`} type="checkbox" checked={selected.has(row._id)} onChange={()=>setSelected((current)=>{const next=new Set(current);next.has(row._id)?next.delete(row._id):next.add(row._id);return next})}/></td><td className="index-cell">{pageSize===ACCOUNT_PAGE_SIZE_ALL?index+1:(page-1)*Number(pageSize)+index+1}</td><td>{row.douyinId}</td><td title={row.secUid || undefined}>{row.secUid ? <a className="link" href={`https://www.douyin.com/user/${row.secUid}`} target="_blank" rel="noreferrer">{row.secUid}</a> : "—"}</td><td>{row.registeredAt.slice(0,10)}</td><td>{row.opName||"—"}</td><td><button className="link" onClick={()=>reveal(row._id)}>•••••• <Eye size={14}/></button></td><td className="short-op-cell">{row.shortOpCode?<><span className="mono">{row.shortOpCode}</span><button className="link" aria-label={`复制短 OP ${row.shortOpCode}`} onClick={()=>copyText(row.shortOpCode,"短 OP 已复制")}>复制</button><button className="link" aria-label={`复制短 OP 链接 ${row.shortOpCode}`} onClick={()=>copyText(`${PUBLIC_OP_ORIGIN}/${row.shortOpCode}`,"短 OP 链接已复制")}>链接</button></>:"—"}</td><td>{OP_PROJECTS[row.opProject]?.name??"未知项目"}</td><td>{new Date(row.opExpiresAt).toLocaleString("zh-CN",{timeZone:"Asia/Shanghai"})}</td><td>{row.owner}</td>
         <td>{row.registeredRegion||"—"}</td><td><span className={`tag sale-${row.saleStatus}`}>{SALE_STATUS_LABELS[row.saleStatus]}</span></td><td><span className={`tag account-${row.accountStatus}`}>{ACCOUNT_STATUS_LABELS[row.accountStatus]}</span></td><td title={row.remark}>{row.remark||"—"}</td>
-        <td><div className="actions"><button className="link" onClick={()=>setDrawer({mode:"edit",id:row._id,value:{douyinId:row.douyinId,registeredAt:row.registeredAt.slice(0,10),opName:row.opName,opSecret:"",opProject:OP_PROJECTS[row.opProject]?.key??DEFAULT_OP_PROJECT,owner:row.owner,registeredRegion:row.registeredRegion||DEFAULT_REGISTERED_REGION,saleStatus:row.saleStatus,remark:row.remark}})}>编辑</button><button className="link" disabled={recheckBusy} onClick={()=>recheckOp(row._id)}>重新检测 OP</button><button className="icon-button" disabled={recheckBusy} title="重新检测" onClick={()=>recheck(row._id)}><RefreshCw size={14}/></button><button className="icon-button danger" title="删除" onClick={()=>remove(row._id)}><Trash2 size={14}/></button></div></td>
+        <td><div className="actions"><button className="link" onClick={()=>setDrawer({mode:"edit",id:row._id,value:{douyinId:row.douyinId,registeredAt:row.registeredAt.slice(0,10),opName:row.opName,opSecret:"",opProject:OP_PROJECTS[row.opProject]?.key??DEFAULT_OP_PROJECT,owner:row.owner,registeredRegion:row.registeredRegion||DEFAULT_REGISTERED_REGION,saleStatus:row.saleStatus,remark:row.remark}})}>编辑</button><button className="link" disabled={recheckBusy||row.accountStatus==="banned"} title={row.accountStatus==="banned"?"封禁账号无需检测 OP":undefined} onClick={()=>recheckOp(row._id)}>重新检测 OP</button><button className="icon-button" disabled={recheckBusy} title="重新检测" onClick={()=>recheck(row._id)}><RefreshCw size={14}/></button><button className="icon-button danger" title="删除" onClick={()=>remove(row._id)}><Trash2 size={14}/></button></div></td>
       </tr>):<tr><td colSpan={16} className="empty">{search||saleStatus||accountStatus||owner||registeredFrom||registeredTo?"当前筛选无结果":"尚无账号数据"}</td></tr>}</tbody></table></div>
       <div className="pager">
         <span>共 {data?.total??0} 条</span>

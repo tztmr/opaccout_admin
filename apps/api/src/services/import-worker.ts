@@ -103,7 +103,11 @@ export async function processImportRow(
   if (existing) {
     const id = String(existing._id);
     await runImportAttempt(() => accounts.update(id, input, context));
-    await runImportAttempt(() => accounts.recheck(id, context));
+    const rechecked = await runImportAttempt(() => accounts.recheck(id, context));
+    if (rechecked.accountStatus === "banned") {
+      await ensureImportedOpName(accounts, id, rechecked.opName, context);
+      return "updated";
+    }
     const opChecked = await accounts.recheckOp(id, context);
     await ensureImportedOpName(accounts, id, opChecked.opName, context);
     return "updated";

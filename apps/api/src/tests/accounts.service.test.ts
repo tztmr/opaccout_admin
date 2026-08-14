@@ -489,6 +489,30 @@ describe("accounts service", () => {
     ]);
   });
 
+  it("skips banned accounts during a batch OP recheck", async () => {
+    const banned = accountDocument({
+      _id: "507f1f77bcf86cd799439011",
+      accountStatus: "banned",
+      saleStatus: "disabled"
+    });
+    const deps = dependencies({
+      findById: vi.fn(async () => banned)
+    });
+    deps.cipher.decrypt = vi.fn(() => "openid|token|pay|pfkey|1782303418");
+    const service = createAccountsService(deps);
+
+    const result = await service.batchRecheckOp([String(banned._id)], context);
+
+    expect(result).toEqual({
+      succeeded: [],
+      failed: [],
+      skipped: [{ id: String(banned._id), code: "BANNED_ACCOUNT" }]
+    });
+    expect(deps.cipher.decrypt).not.toHaveBeenCalled();
+    expect(deps.checkOpProfile).not.toHaveBeenCalled();
+    expect(banned.save).not.toHaveBeenCalled();
+  });
+
   it("rejects manually unlocking a banned account", async () => {
     const account = accountDocument({
       accountStatus: "banned",

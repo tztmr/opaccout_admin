@@ -41,6 +41,28 @@ function renderPage(initialEntries = ["/accounts"]) {
   );
 }
 
+function accountFixture(index: number, accountStatus: "normal" | "banned" = "normal") {
+  return {
+    _id: `account-${index}`,
+    douyinId: String(90000000000 + index),
+    secUid: `MS4wLjABAAAA-fixture-${index}`,
+    registeredAt: "2026-07-01T00:00:00.000Z",
+    opName: `API昵称${index}`,
+    hasOpSecret: true,
+    shortOpCode: String(100000000 + index),
+    opProject: "douyin",
+    opExpiresAt: "2026-08-01T00:00:00.000Z",
+    owner: "小王",
+    registeredRegion: "中国.香港",
+    saleStatus: accountStatus === "banned" ? "disabled" : "unknown",
+    accountStatus,
+    accountCheckedAt: "2026-07-01T00:00:00.000Z",
+    remark: "",
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z"
+  };
+}
+
 describe("accounts page", () => {
   it("shows short OP and project columns, copies their canonical values, and submits the default project", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -722,6 +744,179 @@ describe("accounts page", () => {
     await waitFor(() => {
       expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     });
+  });
+
+  it("splits an all-page account recheck into requests of at most 500 ids", async () => {
+    const items = Array.from({ length: 501 }, (_, index) => accountFixture(index + 1));
+    const submittedBatches: string[][] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items,
+          page: 1,
+          pageSize: "all",
+          total: items.length,
+          totalPages: 1,
+          stats: { total: items.length, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck") {
+        const ids = JSON.parse(String(init?.body)).ids as string[];
+        submittedBatches.push(ids);
+        return json({
+          succeeded: ids.map((_id) => ({ _id })),
+          failed: []
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts?pageSize=all"]);
+    await user.click(await screen.findByRole("checkbox", { name: "选择当前页" }));
+    await user.click(
+      within(screen.getByText(/已选择 501 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测" })
+    );
+
+    expect(await screen.findByText("已完成 501 条账号检测")).toBeInTheDocument();
+    expect(submittedBatches.map((ids) => ids.length)).toEqual([500, 1]);
+    expect(submittedBatches.flat()).toEqual(items.map((item) => item._id));
+  }, 20000);
+
+  it("keeps only the uncertain ids selected when a later account recheck batch fails", async () => {
+    const items = Array.from({ length: 501 }, (_, index) => accountFixture(index + 1));
+    let batchNumber = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items,
+          page: 1,
+          pageSize: "all",
+          total: items.length,
+          totalPages: 1,
+          stats: { total: items.length, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck") {
+        batchNumber += 1;
+        const ids = JSON.parse(String(init?.body)).ids as string[];
+        if (batchNumber === 1) {
+          return json({ succeeded: ids.map((_id) => ({ _id })), failed: [] });
+        }
+        return new Response(JSON.stringify({
+          error: { code: "UPSTREAM_ERROR", message: "检测服务暂时不可用" },
+          requestId: "qa"
+        }), {
+          status: 503,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts?pageSize=all"]);
+    await user.click(await screen.findByRole("checkbox", { name: "选择当前页" }));
+    await user.click(
+      within(screen.getByText(/已选择 501 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测" })
+    );
+
+    expect(
+      await screen.findByText("已完成 500 条账号检测，失败 1 条，请重新检测失败项")
+    ).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: `选择账号 ${items[0]!.douyinId}` })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: `选择账号 ${items[500]!.douyinId}` })).toBeChecked();
+    expect(screen.getByText("已选择 1 条")).toBeInTheDocument();
+  }, 20000);
+
+  it("excludes banned accounts from an all-page batch OP recheck", async () => {
+    const normal = accountFixture(1, "normal");
+    const banned = accountFixture(2, "banned");
+    let submittedIds: string[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [normal, banned],
+          page: 1,
+          pageSize: "all",
+          total: 2,
+          totalPages: 1,
+          stats: { total: 2, unsold: 0, sold: 0, abnormal: 1 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck-op") {
+        submittedIds = JSON.parse(String(init?.body)).ids as string[];
+        return json({
+          succeeded: submittedIds.map((_id) => ({ _id })),
+          failed: [],
+          skipped: []
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts?pageSize=all"]);
+    await user.click(await screen.findByRole("checkbox", { name: "选择当前页" }));
+    await user.click(
+      within(screen.getByText(/已选择 2 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测 OP" })
+    );
+
+    expect(await screen.findByText(/已跳过 1 个封禁账号/)).toBeInTheDocument();
+    expect(submittedIds).toEqual([normal._id]);
+  });
+
+  it("unselects an account skipped as banned by the batch OP endpoint", async () => {
+    const account = accountFixture(1, "normal");
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [account],
+          page: 1,
+          pageSize: "all",
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      if (path === "/api/accounts/batch-recheck-op") {
+        return json({
+          succeeded: [],
+          failed: [],
+          skipped: [{ id: account._id, code: "BANNED_ACCOUNT" }]
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts?pageSize=all"]);
+    const checkbox = await screen.findByRole("checkbox", {
+      name: `选择账号 ${account.douyinId}`
+    });
+    await user.click(checkbox);
+    await user.click(
+      within(screen.getByText(/已选择 1 条/).closest(".batch-bar") as HTMLElement)
+        .getByRole("button", { name: "重新检测 OP" })
+    );
+
+    expect(await screen.findByText(/已跳过 1 个封禁账号/)).toBeInTheDocument();
+    expect(checkbox).not.toBeChecked();
   });
 
   it("waits for the next paint before starting a batch recheck request with page size set to all", async () => {

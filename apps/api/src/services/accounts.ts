@@ -371,6 +371,9 @@ export function createAccountsService({
     async recheckOp(id: string, context: AuditContext): Promise<AccountDto> {
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
+      if (account.accountStatus === "banned") {
+        throw new AppError(409, "BANNED_ACCOUNT", "封禁账号无需重新检测 OP");
+      }
 
       const opSecret = cipher.decrypt(account.opSecret);
       const opResult = await checkOpProfile(opSecret);
@@ -386,7 +389,7 @@ export function createAccountsService({
         remark: account.remark
       }, opResult);
 
-      let baseAccountStatus = account.accountStatus;
+      let baseAccountStatus: AccountStatus = account.accountStatus;
       const changedFields = new Set(["opName", "remark", "saleStatus", "accountStatus"]);
 
       // OP检测成功后，若此前因 token 失效被标记为 op_invalid，需要恢复真实抖音状态。
@@ -540,6 +543,7 @@ export function createAccountsService({
       }
       const succeeded: AccountDto[] = [];
       const failed: Array<{ id: string; code: string }> = [];
+      const skipped: Array<{ id: string; code: string }> = [];
       for (let index = 0; index < ids.length; index += 5) {
         const chunk = ids.slice(index, index + 5);
         const results = await Promise.allSettled(
@@ -547,14 +551,19 @@ export function createAccountsService({
         );
         results.forEach((result, resultIndex) => {
           const id = chunk[resultIndex] ?? "";
-          if (result.status === "fulfilled") succeeded.push(result.value);
-          else failed.push({
-            id,
-            code: result.reason instanceof Error ? result.reason.message : "RECHECK_OP_FAILED"
-          });
+          if (result.status === "fulfilled") {
+            succeeded.push(result.value);
+          } else if (result.reason instanceof AppError && result.reason.code === "BANNED_ACCOUNT") {
+            skipped.push({ id, code: result.reason.code });
+          } else {
+            failed.push({
+              id,
+              code: result.reason instanceof Error ? result.reason.message : "RECHECK_OP_FAILED"
+            });
+          }
         });
       }
-      return { succeeded, failed };
+      return { succeeded, failed, skipped };
     },
 
     async batchOverrideDates(items: { douyinId: string; registeredAt: string }[], context: AuditContext) {

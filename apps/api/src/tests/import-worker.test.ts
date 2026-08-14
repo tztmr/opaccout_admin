@@ -87,6 +87,26 @@ describe("processImportRow", () => {
     expect(accounts.create).not.toHaveBeenCalled();
   });
 
+  it("does not OP recheck an imported existing account detected as banned", async () => {
+    const accounts = accountServiceStub();
+    vi.mocked(accounts.recheck).mockResolvedValueOnce({
+      accountStatus: "banned",
+      opName: "封禁账号"
+    } as never);
+
+    const result = await processImportRow(
+      accounts,
+      input,
+      "update",
+      context,
+      vi.fn(async () => ({ _id: "existing-id" }))
+    );
+
+    expect(result).toBe("updated");
+    expect(accounts.recheck).toHaveBeenCalledWith("existing-id", context);
+    expect(accounts.recheckOp).not.toHaveBeenCalled();
+  });
+
   it("retries a retryable import failure once before succeeding", async () => {
     const accounts = accountServiceStub();
     vi.mocked(accounts.create)
