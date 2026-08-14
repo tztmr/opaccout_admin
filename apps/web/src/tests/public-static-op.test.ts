@@ -83,4 +83,20 @@ describe("static public short OP page", () => {
     expect(nginxConf).toMatch(/location \/\s*\{[\s\S]*try_files \$uri \$uri\/ \/index\.html;/);
     expect(nginxConf).not.toMatch(/location = \/\s*\{[\s\S]*try_files \/op\.html =404;/);
   });
+
+  it("serves only the approved APK path with download-safe headers", () => {
+    expect(nginxConf).toMatch(
+      /location = \/downloads\/short-op\.apk\s*\{[\s\S]*if \(\$request_method !~ \^\(GET\|HEAD\)\$\) \{ return 405; \}/
+    );
+    expect(nginxConf).toMatch(
+      /location = \/downloads\/short-op\.apk\s*\{[\s\S]*application\/vnd\.android\.package-archive/
+    );
+    expect(nginxConf).toContain(
+      "filename*=UTF-8''%E7%9F%AD%E4%BD%8Dop%E4%BF%AE%E5%A4%8D.apk"
+    );
+    expect(nginxConf).toMatch(
+      /location = \/downloads\/short-op\.apk\s*\{[\s\S]*X-Content-Type-Options nosniff/
+    );
+    expect(nginxConf).not.toMatch(/location \/downloads\//);
+  });
 });
