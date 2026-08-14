@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const publicDir = join(webRoot, "public");
+const apkPath = join(publicDir, "downloads", "short-op.apk");
 const nginxConf = readFileSync(join(webRoot, "nginx.conf"), "utf8");
 const opHtml = readFileSync(join(publicDir, "op.html"), "utf8");
 const opJsPath = join(publicDir, "op.js");
@@ -30,6 +32,14 @@ function loadShortOpPage() {
 const shortOpPage = loadShortOpPage();
 
 describe("static public short OP page", () => {
+  it("ships the approved short OP APK bytes", () => {
+    const apk = readFileSync(apkPath);
+    expect(apk.byteLength).toBe(881_585);
+    expect(createHash("sha256").update(apk).digest("hex")).toBe(
+      "04b2b747ee36eb9891cc64bff8e135431b2bf39daa8692d4d1f8a0bd8f8c36cd"
+    );
+  });
+
   it("ships an iOS-friendly static shell that targets the current resolve API", () => {
     expect(opHtml).toContain("短码登录");
     expect(opHtml).toContain("9 位短 OP");
