@@ -45,6 +45,7 @@ export const AccountInputSchema = z
     registeredAt: z.iso.date(),
     opName: z.string().trim().max(100).default(""),
     opSecret: z.string().min(1, "OP卡密不能为空").max(4096),
+    accountPassword: z.string().max(4096).optional(),
     opProject: OpProjectSchema.default(DEFAULT_OP_PROJECT),
     owner: z.string().trim().min(1, "归属人不能为空").max(100),
     registeredRegion: z.preprocess((value) => {
@@ -115,6 +116,7 @@ export type AccountDto = {
   registeredAt: string;
   opName: string;
   hasOpSecret: true;
+  accountPassword: string;
   readonly shortOpCode: string;
   readonly opProject: "douyin";
   opExpiresAt: string;

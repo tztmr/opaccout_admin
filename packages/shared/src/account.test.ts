@@ -7,6 +7,31 @@ import {
 } from "./account";
 
 describe("AccountInputSchema", () => {
+  it("accepts an optional Douyin account password", () => {
+    const base = {
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold" as const,
+      remark: ""
+    };
+    expect(AccountInputSchema.parse({ ...base, accountPassword: "douyin-pass" }).accountPassword)
+      .toBe("douyin-pass");
+    expect(AccountInputSchema.parse(base)).not.toHaveProperty("accountPassword");
+  });
+
+  it("rejects an account password longer than 4096 characters", () => {
+    expect(() => AccountInputSchema.parse({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      accountPassword: "x".repeat(4097)
+    })).toThrow();
+  });
+
   it("accepts only administrator-entered fields", () => {
     const value = AccountInputSchema.parse({
       douyinId: "94946893573",

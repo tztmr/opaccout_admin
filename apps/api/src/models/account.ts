@@ -16,6 +16,7 @@ export type AccountRecord = {
   registeredAt: Date;
   opName: string;
   opSecret: EncryptedValue;
+  accountPassword?: EncryptedValue | undefined;
   opExpiresAt: Date;
   owner: string;
   registeredRegion: string;
@@ -49,6 +50,7 @@ const AccountSchema = new Schema<AccountRecord>(
     registeredAt: { type: Date, required: true },
     opName: { type: String, default: "", trim: true, maxlength: 100 },
     opSecret: { type: EncryptedValueSchema, required: true },
+    accountPassword: { type: EncryptedValueSchema, required: false },
     opExpiresAt: { type: Date, required: true },
     owner: { type: String, required: true, trim: true, maxlength: 100 },
     registeredRegion: {

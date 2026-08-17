@@ -86,7 +86,10 @@ function extractBatchDouyinIds(keyword: string): string[] {
   return [...new Set(terms)];
 }
 
-function toDto(value: AccountRecord & { _id: unknown }): AccountDto {
+function toDto(
+  value: AccountRecord & { _id: unknown },
+  cipher: SecretCipher
+): AccountDto {
   return {
     _id: String(value._id),
     douyinId: value.douyinId,
@@ -94,6 +97,9 @@ function toDto(value: AccountRecord & { _id: unknown }): AccountDto {
     registeredAt: value.registeredAt.toISOString(),
     opName: value.opName,
     hasOpSecret: true,
+    accountPassword: value.accountPassword
+      ? cipher.decrypt(value.accountPassword)
+      : "",
     shortOpCode: value.shortOpCode!,
     opProject: value.opProject ?? DEFAULT_OP_PROJECT,
     opExpiresAt: value.opExpiresAt.toISOString(),
@@ -192,10 +198,11 @@ export function createAccountsService({
         checkOpProfile(input.opSecret)
       ]);
       const prepared = applyOpProfileResult(input, opResult);
+      const { accountPassword, ...preparedFields } = prepared;
       const accountStatus = resolveAccountStatus(detected.accountStatus, opResult);
       try {
         const created = await createAccountWithShortOpRetry(model, {
-          ...prepared,
+          ...preparedFields,
           registeredAt: new Date(`${prepared.registeredAt}T00:00:00.000Z`),
           secUid: detected.secUid,
           accountStatus,
@@ -205,7 +212,10 @@ export function createAccountsService({
             prepared.saleStatus
           ),
           opSecret: cipher.encrypt(prepared.opSecret),
-          opExpiresAt: calculateOpExpiry(prepared.opSecret)
+          opExpiresAt: calculateOpExpiry(prepared.opSecret),
+          accountPassword: accountPassword
+            ? cipher.encrypt(accountPassword)
+            : undefined
         });
         await writeAudit(
           "account.created",
@@ -213,7 +223,7 @@ export function createAccountsService({
           Object.keys(input),
           context
         );
-        return toDto(created);
+        return toDto(created, cipher);
       } catch (error) {
         throw duplicateError(error) ?? error;
       }
@@ -223,7 +233,7 @@ export function createAccountsService({
       if (!Types.ObjectId.isValid(id)) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
       const account = await model.findById(id).lean();
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
-      return toDto(account as AccountRecord & { _id: unknown });
+      return toDto(account as AccountRecord & { _id: unknown }, cipher);
     },
 
     async list(rawQuery: unknown): Promise<AccountListResult> {
@@ -288,7 +298,7 @@ export function createAccountsService({
           ? 1
           : Math.max(1, Math.ceil(total / resolvedPageSize));
       return {
-        items: items.map((item) => toDto(item as AccountRecord & { _id: unknown })),
+        items: items.map((item) => toDto(item as AccountRecord & { _id: unknown }, cipher)),
         page,
         pageSize: responsePageSize,
         total,
@@ -328,6 +338,12 @@ export function createAccountsService({
       const changedFields = Object.keys(patch);
       assertBannedSaleStatusChange(account.accountStatus, patch.saleStatus);
 
+      if ("accountPassword" in patch) {
+        account.accountPassword = patch.accountPassword
+          ? cipher.encrypt(patch.accountPassword)
+          : undefined;
+      }
+
       if (patch.douyinId && patch.douyinId !== account.douyinId) {
         const detected = await detectDouyinStatus(checkDouyinId, patch.douyinId);
         account.secUid = detected.secUid;
@@ -345,7 +361,7 @@ export function createAccountsService({
         changedFields.push("opExpiresAt");
       }
       for (const [key, value] of Object.entries(patch)) {
-        if (key === "opSecret") continue;
+        if (key === "opSecret" || key === "accountPassword") continue;
         if (key === "registeredAt") {
           account.registeredAt = new Date(`${value}T00:00:00.000Z`);
         } else {
@@ -358,7 +374,7 @@ export function createAccountsService({
         throw duplicateError(error) ?? error;
       }
       await writeAudit("account.updated", [id], changedFields, context);
-      return toDto(account);
+      return toDto(account, cipher);
     },
 
     async reveal(id: string, context: AuditContext): Promise<{ opSecret: string }> {
@@ -419,7 +435,7 @@ export function createAccountsService({
         [...changedFields],
         context
       );
-      return toDto(account);
+      return toDto(account, cipher);
     },
 
     async remove(id: string, context: AuditContext): Promise<void> {
@@ -513,7 +529,7 @@ export function createAccountsService({
         ["secUid", "accountStatus", "accountCheckedAt", "saleStatus"],
         context
       );
-      return toDto(account);
+      return toDto(account, cipher);
     },
 
     async batchRecheck(ids: string[], context: AuditContext) {

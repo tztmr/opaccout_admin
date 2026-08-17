@@ -11,7 +11,19 @@ vi.mock("node:crypto", async (importOriginal) => ({
 
 const context = { ip: "127.0.0.1", userAgent: "test", requestId: "request-id" };
 
-function accountDocument(overrides: Record<string, unknown> = {}) {
+const encryptedPassword = {
+  version: 1 as const,
+  iv: "cGFzc3dvcmQtaXY=",
+  ciphertext: "cGFzc3dvcmQtY2lwaGVydGV4dA==",
+  authTag: "cGFzc3dvcmQtdGFn"
+};
+
+type AccountTestDocument = AccountRecord & {
+  _id: string;
+  save: ReturnType<typeof vi.fn>;
+};
+
+function accountDocument(overrides: Record<string, unknown> = {}): AccountTestDocument {
   return {
     _id: "507f1f77bcf86cd799439011",
     douyinId: "94946893573",
@@ -40,7 +52,7 @@ function accountDocument(overrides: Record<string, unknown> = {}) {
       return this;
     }),
     ...overrides
-  };
+  } as AccountTestDocument;
 }
 
 function dependencies(
@@ -130,6 +142,96 @@ describe("accounts service", () => {
       opProject: "douyin"
     });
     expect(auditWrite).toHaveBeenCalledOnce();
+  });
+
+  it("encrypts a new account password without persisting plaintext", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument(value)
+    );
+    const encrypt = vi.fn((value: string) => value === "douyin-pass"
+      ? encryptedPassword
+      : {
+          version: 1 as const,
+          iv: "aXY=",
+          ciphertext: "Y2lwaGVy",
+          authTag: "dGFn"
+        });
+    const service = createAccountsService({
+      model: { create } as unknown as Model<AccountRecord>,
+      checkDouyinId: vi.fn(async () => ({
+        secUid: "MS4wLjABAAAA-fixture",
+        accountStatus: "normal" as const,
+        checkedAt: new Date("2026-07-27T00:00:00.000Z")
+      })),
+      checkOpProfile: vi.fn(async () => ({ kind: "success" as const, nickname: "API昵称" })),
+      cipher: {
+        encrypt,
+        decrypt: vi.fn((value) => value === encryptedPassword ? "douyin-pass" : "")
+      },
+      audit: { write: vi.fn(async () => undefined) }
+    });
+
+    const result = await service.create({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold",
+      remark: "",
+      accountPassword: "douyin-pass"
+    }, context);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      accountPassword: encryptedPassword
+    }));
+    expect(result.accountPassword).toBe("douyin-pass");
+    expect(JSON.stringify(create.mock.calls[0]?.[0])).not.toContain("douyin-pass");
+  });
+
+  it("preserves an existing account password when an update omits it", async () => {
+    const account = accountDocument({ accountPassword: encryptedPassword });
+    const deps = dependencies({ findById: vi.fn(async () => account) });
+    deps.cipher.decrypt = vi.fn(() => "douyin-pass");
+    const service = createAccountsService(deps);
+
+    await service.update(String(account._id), { remark: "keep" }, context);
+
+    expect(account.accountPassword).toBe(encryptedPassword);
+  });
+
+  it("replaces an existing account password with encrypted content", async () => {
+    const account = accountDocument({ accountPassword: encryptedPassword });
+    const deps = dependencies({ findById: vi.fn(async () => account) });
+    deps.cipher.decrypt = vi.fn(() => "replacement");
+    const service = createAccountsService(deps);
+
+    await service.update(String(account._id), { accountPassword: "replacement" }, context);
+
+    expect(deps.cipher.encrypt).toHaveBeenCalledWith("replacement");
+  });
+
+  it("clears an existing account password when an update supplies an empty string", async () => {
+    const account = accountDocument({ accountPassword: encryptedPassword });
+    const service = createAccountsService(
+      dependencies({ findById: vi.fn(async () => account) })
+    );
+
+    await service.update(String(account._id), { accountPassword: "" }, context);
+
+    expect(account.accountPassword).toBeUndefined();
+  });
+
+  it("returns an empty account password for a historical record", async () => {
+    const account = accountDocument();
+    const lean = vi.fn(async () => account);
+    const service = createAccountsService(
+      dependencies({ findById: vi.fn(() => ({ lean })) })
+    );
+
+    const result = await service.get(String(account._id));
+
+    expect(result.accountPassword).toBe("");
   });
 
   it("keeps the assigned short OP code when updating an account", async () => {

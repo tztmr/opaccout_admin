@@ -76,6 +76,12 @@ describe("Account model", () => {
   });
 
   it("builds normalized search text before validation", async () => {
+    const encryptedPassword = {
+      version: 1 as const,
+      iv: "cGFzc3dvcmQtaXY=",
+      ciphertext: "cGFzc3dvcmQtY2lwaGVydGV4dA==",
+      authTag: "cGFzc3dvcmQtdGFn"
+    };
     const account = new AccountModel({
       douyinId: "94946893573",
       secUid: "MS4wLjABAAAA-Fixture",
@@ -94,7 +100,8 @@ describe("Account model", () => {
       accountCheckedAt: new Date(),
       remark: " 新号 ",
       shortOpCode: "123456789",
-      opProject: "douyin"
+      opProject: "douyin",
+      accountPassword: encryptedPassword
     });
 
     await account.validate();
@@ -103,6 +110,8 @@ describe("Account model", () => {
     expect(account.searchText).toContain("星河");
     expect(account.searchText).toContain("123456789");
     expect(account.searchText).toContain("抖音");
+    expect(account.toObject().accountPassword).toEqual(encryptedPassword);
+    expect(account.searchText).not.toContain("douyin-pass");
   });
 });
 
