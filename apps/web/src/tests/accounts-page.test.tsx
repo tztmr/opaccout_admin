@@ -48,6 +48,7 @@ function accountFixture(index: number, accountStatus: "normal" | "banned" = "nor
     secUid: `MS4wLjABAAAA-fixture-${index}`,
     registeredAt: "2026-07-01T00:00:00.000Z",
     opName: `API昵称${index}`,
+    accountPassword: "",
     hasOpSecret: true,
     shortOpCode: String(100000000 + index),
     opProject: "douyin",
@@ -64,8 +65,10 @@ function accountFixture(index: number, accountStatus: "normal" | "banned" = "nor
 }
 
 describe("accounts page", () => {
-  it("shows short OP and project columns, copies their canonical values, and submits the default project", async () => {
+  it("shows visible account passwords and submits their create and edit values", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
+    const createPayloads: unknown[] = [];
+    const editPayloads: unknown[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/accounts/owners") return json({ items: ["小王"] });
@@ -78,6 +81,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "douyin-pass-1",
               hasOpSecret: true,
               shortOpCode: "123456789",
               opProject: "douyin",
@@ -97,6 +101,7 @@ describe("accounts page", () => {
               secUid: "",
               registeredAt: "2026-07-02T00:00:00.000Z",
               opName: "",
+              accountPassword: "",
               hasOpSecret: true,
               shortOpCode: "987654321",
               opProject: "legacy-unknown",
@@ -118,9 +123,17 @@ describe("accounts page", () => {
           stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
         });
       }
+      if (path === "/api/accounts/check-douyin") {
+        return json({ secUid: "MS4wLjABAAAA-new", accountStatus: "normal" });
+      }
+      if (path === "/api/accounts") {
+        expect(init?.method).toBe("POST");
+        createPayloads.push(JSON.parse(String(init?.body)));
+        return json({});
+      }
       if (path === "/api/accounts/account-1") {
         expect(init?.method).toBe("PATCH");
-        expect(JSON.parse(String(init?.body))).toMatchObject({ opProject: "douyin" });
+        editPayloads.push(JSON.parse(String(init?.body)));
         return json({});
       }
       throw new Error(`Unhandled request: ${path}`);
@@ -134,9 +147,14 @@ describe("accounts page", () => {
     expect(
       (await screen.findAllByRole("columnheader")).map((node) => node.textContent)
     ).toEqual([
-      "", "序号", "抖音号", "sec_uid", "注册时间", "OP名称", "OP卡密",
+      "", "序号", "抖音号", "密码", "sec_uid", "注册时间", "OP名称", "OP卡密",
       "短 OP", "项目", "OP到期时间", "归属人", "注册地区", "售卖状态", "账号状态", "备注", "操作"
     ]);
+    expect(await screen.findByText("douyin-pass-1")).toBeVisible();
+    expect(screen.queryByText("••••••", { selector: ".account-password-cell" }))
+      .not.toBeInTheDocument();
+    const secondRow = screen.getByRole("checkbox", { name: "选择账号 93180119509" }).closest("tr");
+    expect(secondRow?.querySelector(".account-password-cell")).toHaveTextContent("—");
     expect(await screen.findByText("未知项目")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "复制短 OP 123456789" }));
@@ -146,19 +164,43 @@ describe("accounts page", () => {
 
     await user.click(screen.getByRole("button", { name: "新增账号" }));
     expect(screen.getByLabelText("项目")).toHaveValue("douyin");
+    const passwordInput = screen.getByLabelText("密码");
+    expect(passwordInput).toHaveProperty("type", "text");
     expect(document.querySelector('input[name="shortOpCode"]')).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "取消" }));
+    await user.type(screen.getByLabelText("抖音号"), "93900112233");
+    await user.type(passwordInput, "new-account-pass");
+    await user.type(screen.getByLabelText("OP卡密"), "a|b|1782303418");
+    await user.type(
+      within(screen.getByRole("heading", { name: "新增账号" }).closest(".drawer")!).getByLabelText("归属人"),
+      "小王"
+    );
+    await user.click(screen.getByRole("button", { name: "检测" }));
+    expect(await screen.findByText(/MS4wLjABAAAA-new/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => {
+      expect(createPayloads).toContainEqual(expect.objectContaining({
+        accountPassword: "new-account-pass"
+      }));
+    });
     const [firstEdit] = screen.getAllByRole("button", { name: "编辑" });
     expect(firstEdit).toBeDefined();
     await user.click(firstEdit!);
     expect(screen.getByLabelText("项目")).toHaveValue("douyin");
+    expect(screen.getByLabelText("密码")).toHaveValue("douyin-pass-1");
     await user.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/accounts/account-1",
-        expect.objectContaining({ method: "PATCH" })
-      );
+      expect(editPayloads).toHaveLength(1);
     });
+    expect(editPayloads[0]).not.toHaveProperty("accountPassword");
+
+    const [editAgain] = screen.getAllByRole("button", { name: "编辑" });
+    await user.click(editAgain!);
+    await user.clear(screen.getByLabelText("密码"));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => {
+      expect(editPayloads).toHaveLength(2);
+    });
+    expect(editPayloads[1]).toMatchObject({ accountPassword: "" });
   });
 
   it("renders sec_uid as a Douyin profile link and opens a batch status dialog", async () => {
@@ -174,6 +216,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -320,6 +363,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -373,6 +417,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -426,6 +471,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -483,6 +529,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -543,6 +590,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -608,6 +656,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-1",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称1",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -625,6 +674,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-2",
               registeredAt: "2026-07-02T00:00:00.000Z",
               opName: "API昵称2",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-02T00:00:00.000Z",
               owner: "小王",
@@ -685,6 +735,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-1",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称1",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -702,6 +753,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-2",
               registeredAt: "2026-07-02T00:00:00.000Z",
               opName: "API昵称2",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-02T00:00:00.000Z",
               owner: "小王",
@@ -942,6 +994,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-1",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称1",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -959,6 +1012,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-2",
               registeredAt: "2026-07-02T00:00:00.000Z",
               opName: "API昵称2",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-02T00:00:00.000Z",
               owner: "小王",
@@ -1026,6 +1080,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -1089,6 +1144,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -1153,6 +1209,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -1170,6 +1227,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-2",
               registeredAt: "2026-07-02T00:00:00.000Z",
               opName: "API昵称2",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -1228,6 +1286,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -1245,6 +1304,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture-2",
               registeredAt: "2026-07-02T00:00:00.000Z",
               opName: "API昵称2",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
@@ -1303,6 +1363,7 @@ describe("accounts page", () => {
               secUid: "MS4wLjABAAAA-fixture",
               registeredAt: "2026-07-01T00:00:00.000Z",
               opName: "API昵称",
+              accountPassword: "",
               hasOpSecret: true,
               opExpiresAt: "2026-08-01T00:00:00.000Z",
               owner: "小王",
