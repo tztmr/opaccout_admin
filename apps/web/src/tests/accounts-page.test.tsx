@@ -65,6 +65,41 @@ function accountFixture(index: number, accountStatus: "normal" | "banned" = "nor
 }
 
 describe("accounts page", () => {
+  it("renders semantic columns and preserves full values as truncation titles", async () => {
+    const account = accountFixture(1);
+    account.secUid = "MS4wLjABAAAA-a-long-sec-uid-for-truncation";
+    account.accountPassword = "a-long-visible-password-for-truncation";
+    account.opName = "一个很长的 OP 名称用于截断提示";
+    account.remark = "一段很长的备注内容用于截断提示";
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [account],
+          page: 1,
+          pageSize: 20,
+          total: 1,
+          totalPages: 1,
+          stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+
+    const secUid = await screen.findByRole("link", { name: account.secUid });
+    const table = secUid.closest("table")!;
+    expect(table).toHaveClass("accounts-table");
+    expect(table.querySelectorAll("colgroup col")).toHaveLength(17);
+    expect(secUid.closest("td")).toHaveAttribute("title", account.secUid);
+    expect(screen.getByText(account.accountPassword).closest("td")).toHaveAttribute("title", account.accountPassword);
+    expect(screen.getByText(account.opName).closest("td")).toHaveAttribute("title", account.opName);
+    expect(screen.getByText(account.remark).closest("td")).toHaveAttribute("title", account.remark);
+  });
+
   it("shows visible account passwords and submits their create and edit values", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     const createPayloads: unknown[] = [];

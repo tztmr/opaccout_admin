@@ -25,13 +25,23 @@ describe("global form control styles", () => {
     expect(batchBarButtonRule).toContain("white-space: nowrap;");
   });
 
-  it("keeps the expanded account table horizontally scrollable without ellipsizing checkboxes", () => {
+  it("keeps the account table within the 1920 desktop content budget", () => {
+    const accountTableRule =
+      styles.match(/\.accounts-table\s*\{[^}]+\}/)?.[0] ?? "";
+    const actionsRule =
+      styles.match(/\.accounts-table \.actions\s*\{[^}]+\}/)?.[0] ?? "";
+
+    expect(accountTableRule).toContain("table-layout: fixed;");
+    expect(accountTableRule).toContain("min-width: 1410px;");
+    expect(accountTableRule).not.toContain("1720px");
+    expect(actionsRule).toContain("gap: 3px;");
+  });
+
+  it("keeps table overflow and checkbox clipping scoped separately", () => {
     const tableScrollRule = styles.match(/\.table-scroll\s*\{[^}]+\}/)?.[0] ?? "";
-    const tableRule = styles.match(/table\s*\{[^}]+\}/)?.[0] ?? "";
     const checkCellRule = styles.match(/\.check-cell,[\s\S]*?\n}\n/)?.[0] ?? "";
 
     expect(tableScrollRule).toContain("overflow-x: auto;");
-    expect(tableRule).toContain("min-width:");
     expect(checkCellRule).toContain("text-overflow: clip !important;");
   });
 });

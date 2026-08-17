@@ -68,14 +68,36 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea { border: 1px
 input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus { border-color: #9bb9ff; box-shadow: 0 0 0 3px #eff4ff; }
 select { height: 36px; padding: 0 30px 0 10px; }
 .table-scroll { width: 100%; overflow-x: auto; }
-table { width: 100%; min-width: 1720px; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
 th { height: 43px; padding: 0 12px; color: #6d7688; background: #fafbfc; text-align: left; font-weight: 600; }
 td { max-width: 220px; height: 50px; padding: 0 12px; border-top: 1px solid #edf0f4; overflow: hidden; text-overflow: ellipsis; }
 tbody tr:hover { background: #fafcff; }
 .empty { height: 118px; text-align: center; color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #657087; }
-.short-op-cell { min-width: 192px; max-width: none; }
 .short-op-cell .link { margin-left: 8px; }
+.accounts-table { min-width: 1410px; table-layout: fixed; }
+.accounts-table th,
+.accounts-table td { padding-inline: 6px; }
+.accounts-table .col-check { width: 38px; }
+.accounts-table .col-index { width: 42px; }
+.accounts-table .col-douyin { width: 94px; }
+.accounts-table .col-password { width: 88px; }
+.accounts-table .col-secuid { width: 112px; }
+.accounts-table .col-date { width: 82px; }
+.accounts-table .col-opname { width: 72px; }
+.accounts-table .col-opsecret { width: 66px; }
+.accounts-table .col-shortop { width: 132px; }
+.accounts-table .col-project { width: 50px; }
+.accounts-table .col-expiry { width: 122px; }
+.accounts-table .col-owner { width: 62px; }
+.accounts-table .col-region { width: 70px; }
+.accounts-table .col-sale { width: 74px; }
+.accounts-table .col-status { width: 64px; }
+.accounts-table .col-remark { width: 70px; }
+.accounts-table .col-actions { width: 172px; }
+.accounts-table .short-op-cell { min-width: 0; }
+.accounts-table .actions { gap: 3px; }
+.accounts-table .actions .link { font-size: 12px; }
 .tag { width: max-content; min-height: 24px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .sale-unknown { color: #667085; background: #f2f4f7; }
 .sale-unsold { color: #866100; background: #fff6d8; }
