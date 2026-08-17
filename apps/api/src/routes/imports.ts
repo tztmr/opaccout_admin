@@ -49,10 +49,16 @@ export function createImportsRouter(cipher: SecretCipher): Router {
     try {
       if (!req.file) throw new Error("IMPORT_FILE_REQUIRED");
       const parsed = await parseImportAsync(req.file.buffer, req.file.originalname);
-      const stagedRows = parsed.rows.map((row) => ({
-        ...row,
-        opSecret: cipher.encrypt(row.opSecret)
-      }));
+      const stagedRows = parsed.rows.map((row) => {
+        const { accountPassword, ...fields } = row;
+        return {
+          ...fields,
+          opSecret: cipher.encrypt(row.opSecret),
+          accountPassword: accountPassword
+            ? cipher.encrypt(accountPassword)
+            : undefined
+        };
+      });
       const preview = await ImportPreviewModel.create({
         fileName: req.file.originalname,
         fileType: req.file.originalname.toLowerCase().endsWith(".csv") ? "csv" : req.file.originalname.toLowerCase().endsWith(".xls") ? "xls" : "xlsx",

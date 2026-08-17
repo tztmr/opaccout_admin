@@ -6,6 +6,7 @@ const ALLOWED_CHANGED_FIELDS = new Set([
   "registeredAt",
   "opName",
   "opSecret",
+  "accountPassword",
   "opExpiresAt",
   "owner",
   "saleStatus",

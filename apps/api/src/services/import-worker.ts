@@ -7,7 +7,10 @@ import type { AccountsService, AuditContext } from "./accounts";
 import { DouyinCheckError } from "./douyin-check";
 import type { EncryptedValue, SecretCipher } from "./encryption";
 
-type StagedRow = Omit<AccountInput, "opSecret"> & { opSecret: EncryptedValue };
+type StagedRow = Omit<AccountInput, "opSecret" | "accountPassword"> & {
+  opSecret: EncryptedValue;
+  accountPassword?: EncryptedValue | string | undefined;
+};
 export type ImportRowOutcome = "created" | "updated" | "skipped";
 
 const DOUYIN_ERROR_MESSAGES: Record<string, string> = {
@@ -142,7 +145,15 @@ export async function processNextImportJob(
   for (let index = 0; index < stagedRows.length; index += 1) {
     const raw = stagedRows[index]!;
     const rowNumber = index + 2;
-    const input: AccountInput = { ...raw, opSecret: cipher.decrypt(raw.opSecret) };
+    const input: AccountInput = {
+      ...raw,
+      opSecret: cipher.decrypt(raw.opSecret),
+      accountPassword: typeof raw.accountPassword === "string"
+        ? raw.accountPassword
+        : raw.accountPassword
+          ? cipher.decrypt(raw.accountPassword)
+          : ""
+    };
     try {
       const outcome = await processImportRow(
         accounts,

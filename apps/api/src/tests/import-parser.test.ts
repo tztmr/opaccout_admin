@@ -2,10 +2,13 @@ import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
 import { parseImport } from "../services/import-parser";
 
-function workbookBuffer(rows: Record<string, unknown>[]): Buffer {
+function workbookBuffer(
+  rows: Record<string, unknown>[],
+  bookType: "xlsx" | "xls" = "xlsx"
+): Buffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "账号");
-  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return XLSX.write(workbook, { type: "buffer", bookType }) as Buffer;
 }
 
 describe("parseImport", () => {
@@ -31,6 +34,31 @@ describe("parseImport", () => {
     }]), "accounts.xlsx");
 
     expect(result.rows[0]?.accountPassword).toBe("");
+  });
+
+  it("imports the password column from a legacy XLS workbook", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      密码: "legacy-xls-pass",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }], "xls"), "accounts.xls");
+
+    expect(result.rows[0]?.accountPassword).toBe("legacy-xls-pass");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("imports the password column from CSV", () => {
+    const csv = [
+      "抖音号,密码,注册时间,OP卡密,归属人",
+      "94946893573,csv-pass,2026-07-27,a|b|1782303418,小王"
+    ].join("\n");
+
+    const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv");
+
+    expect(result.rows[0]?.accountPassword).toBe("csv-pass");
+    expect(result.errors).toEqual([]);
   });
 
   it("reads a UTF-8 Chinese CSV without a BOM", () => {

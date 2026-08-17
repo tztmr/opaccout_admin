@@ -106,7 +106,7 @@ export function createExportsRouter(cipher: SecretCipher, audit: { write(event: 
     };
     await audit.write({
       action: "account.exported", targetType: "account",
-      targetIds: ids, changedFields: ["opSecret"], count: accounts.length, ...context
+      targetIds: ids, changedFields: ["opSecret", "accountPassword"], count: accounts.length, ...context
     });
     res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.attachment(`douyin-accounts.${format}`).send(

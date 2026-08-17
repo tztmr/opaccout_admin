@@ -1,8 +1,12 @@
 import type { AccountInput } from "@douyin-admin/shared";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AccountModel } from "../models/account";
+import { ImportJobModel } from "../models/import-job";
+import { ImportPreviewModel } from "../models/import-preview";
 import type { AccountsService, AuditContext } from "../services/accounts";
 import {
   classifyImportError,
+  processNextImportJob,
   processImportRow,
   summarizeImportErrors
 } from "../services/import-worker";
@@ -25,6 +29,10 @@ const context: AuditContext = {
   userAgent: "test",
   requestId: "import-test"
 };
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 function accountServiceStub() {
   return {
@@ -189,5 +197,62 @@ describe("processImportRow", () => {
         }
       ])
     ).toBe("失败 3 条：抖音检测超时×2、抖音检测网络异常×1");
+  });
+});
+
+describe("processNextImportJob", () => {
+  it("decrypts a staged account password before calling the account service", async () => {
+    const encryptedOpSecret = {
+      version: 1 as const,
+      iv: "b3AtaXY=",
+      ciphertext: "b3AtY2lwaGVydGV4dA==",
+      authTag: "b3AtdGFn"
+    };
+    const encryptedPassword = {
+      version: 1 as const,
+      iv: "cGFzc3dvcmQtaXY=",
+      ciphertext: "cGFzc3dvcmQtY2lwaGVydGV4dA==",
+      authTag: "cGFzc3dvcmQtdGFn"
+    };
+    const job = {
+      id: "job-id",
+      previewId: "preview-id",
+      duplicateStrategy: "skip" as const,
+      status: "running" as const,
+      processed: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      save: vi.fn(async () => undefined),
+      set: vi.fn()
+    };
+    vi.spyOn(ImportJobModel, "findOneAndUpdate").mockResolvedValue(job as never);
+    vi.spyOn(ImportPreviewModel, "findById").mockResolvedValue({
+      _id: "preview-id",
+      stagedRows: [{
+        ...input,
+        opSecret: encryptedOpSecret,
+        accountPassword: encryptedPassword
+      }]
+    } as never);
+    vi.spyOn(ImportPreviewModel, "findByIdAndDelete").mockResolvedValue(null);
+    vi.spyOn(AccountModel, "findOne").mockReturnValue({
+      select: () => ({ lean: async () => null })
+    } as never);
+    const accounts = accountServiceStub();
+    const cipher = {
+      encrypt: vi.fn(),
+      decrypt: vi.fn((value) => value === encryptedPassword
+        ? "import-pass"
+        : "openid|token|pay|pfkey|1782303418")
+    };
+
+    await processNextImportJob(accounts, cipher);
+
+    expect(accounts.create).toHaveBeenCalledWith(
+      expect.objectContaining({ accountPassword: "import-pass" }),
+      expect.objectContaining({ userAgent: "import-worker" })
+    );
   });
 });

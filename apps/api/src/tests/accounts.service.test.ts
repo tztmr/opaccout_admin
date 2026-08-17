@@ -156,6 +156,7 @@ describe("accounts service", () => {
           ciphertext: "Y2lwaGVy",
           authTag: "dGFn"
         });
+    const auditWrite = vi.fn(async () => undefined);
     const service = createAccountsService({
       model: { create } as unknown as Model<AccountRecord>,
       checkDouyinId: vi.fn(async () => ({
@@ -168,7 +169,7 @@ describe("accounts service", () => {
         encrypt,
         decrypt: vi.fn((value) => value === encryptedPassword ? "douyin-pass" : "")
       },
-      audit: { write: vi.fn(async () => undefined) }
+      audit: { write: auditWrite }
     });
 
     const result = await service.create({
@@ -187,6 +188,11 @@ describe("accounts service", () => {
     }));
     expect(result.accountPassword).toBe("douyin-pass");
     expect(JSON.stringify(create.mock.calls[0]?.[0])).not.toContain("douyin-pass");
+    expect(auditWrite).toHaveBeenCalledWith(expect.objectContaining({
+      action: "account.created",
+      changedFields: expect.arrayContaining(["accountPassword"])
+    }));
+    expect(JSON.stringify(auditWrite.mock.calls)).not.toContain("douyin-pass");
   });
 
   it("preserves an existing account password when an update omits it", async () => {
@@ -209,6 +215,11 @@ describe("accounts service", () => {
     await service.update(String(account._id), { accountPassword: "replacement" }, context);
 
     expect(deps.cipher.encrypt).toHaveBeenCalledWith("replacement");
+    expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "account.updated",
+      changedFields: expect.arrayContaining(["accountPassword"])
+    }));
+    expect(JSON.stringify(deps.audit.write.mock.calls)).not.toContain("replacement");
   });
 
   it("clears an existing account password when an update supplies an empty string", async () => {

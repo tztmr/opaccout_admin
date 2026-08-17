@@ -43,7 +43,8 @@ describe("exports routes", () => {
     expect(audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "account.exported",
-        targetIds: ["a", "b"]
+        targetIds: ["a", "b"],
+        changedFields: ["opSecret", "accountPassword"]
       })
     );
   });
