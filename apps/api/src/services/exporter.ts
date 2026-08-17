@@ -25,6 +25,9 @@ export function exportAccounts(
 ): Buffer {
   const rows = accounts.map((account) => ({
     抖音号: account.douyinId,
+    密码: account.accountPassword
+      ? cipher.decrypt(account.accountPassword)
+      : "",
     sec_uid: account.secUid,
     注册时间: account.registeredAt.toISOString().slice(0, 10),
     OP名称: account.opName,
@@ -43,7 +46,8 @@ export function exportAccounts(
   markColumnAsText(sheet, 0, rows.length);
   markColumnAsText(sheet, 1, rows.length);
   markColumnAsText(sheet, 2, rows.length);
-  markColumnAsText(sheet, 5, rows.length);
+  markColumnAsText(sheet, 3, rows.length);
+  markColumnAsText(sheet, 6, rows.length);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "抖音账号");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
@@ -51,7 +55,7 @@ export function exportAccounts(
 
 export function exportTemplate(format: "xlsx" | "csv"): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet([[
-    "抖音号", "注册时间", "OP名称", "OP卡密", "项目", "归属人", "注册地区", "售卖状态", "备注"
+    "抖音号", "密码", "注册时间", "OP名称", "OP卡密", "项目", "归属人", "注册地区", "售卖状态", "备注"
   ]]);
   if (format === "csv") return Buffer.from(XLSX.utils.sheet_to_csv(sheet), "utf8");
   const workbook = XLSX.utils.book_new();

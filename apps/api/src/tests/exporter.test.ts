@@ -3,6 +3,71 @@ import { describe, expect, it, vi } from "vitest";
 import { exportAccounts, exportTemplate } from "../services/exporter";
 
 describe("exportAccounts", () => {
+  it("exports a decrypted password immediately after 抖音号", () => {
+    const encryptedPassword = {
+      version: 1 as const,
+      iv: "cGFzc3dvcmQtaXY=",
+      ciphertext: "ZW5jcnlwdGVkLXBhc3N3b3Jk",
+      authTag: "cGFzc3dvcmQtdGFn"
+    };
+    const buffer = exportAccounts([{
+      _id: "507f1f77bcf86cd799439011",
+      douyinId: "94946893573",
+      accountPassword: encryptedPassword,
+      secUid: "MS4wLjABAAAA-fixture",
+      registeredAt: new Date("2026-07-28T00:00:00.000Z"),
+      opName: "",
+      opSecret: { version: 1, iv: "aXY=", ciphertext: "Y2lwaGVy", authTag: "dGFn" },
+      opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
+      owner: "小王",
+      registeredRegion: "中国.香港",
+      saleStatus: "unknown",
+      accountStatus: "normal",
+      accountCheckedAt: new Date("2026-07-28T00:00:00.000Z"),
+      remark: "",
+      searchText: "",
+      createdAt: new Date("2026-07-28T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-28T00:00:00.000Z")
+    }], {
+      encrypt: vi.fn(),
+      decrypt: vi.fn((value) => value === encryptedPassword ? "douyin-pass" : "a|b|1782303418")
+    }, "xlsx");
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0] ?? ""];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet!, { defval: "" });
+
+    expect(Object.keys(rows[0] ?? {}).slice(0, 3)).toEqual([
+      "抖音号", "密码", "sec_uid"
+    ]);
+    expect(rows[0]?.["密码"]).toBe("douyin-pass");
+  });
+
+  it("exports an empty password for records without one", () => {
+    const output = exportAccounts([{
+      _id: "507f1f77bcf86cd799439011",
+      douyinId: "94946893573",
+      secUid: "MS4wLjABAAAA-fixture",
+      registeredAt: new Date("2026-07-28T00:00:00.000Z"),
+      opName: "",
+      opSecret: { version: 1, iv: "aXY=", ciphertext: "Y2lwaGVy", authTag: "dGFn" },
+      opExpiresAt: new Date("2026-08-23T12:16:58.000Z"),
+      owner: "小王",
+      registeredRegion: "中国.香港",
+      saleStatus: "unknown",
+      accountStatus: "normal",
+      accountCheckedAt: new Date("2026-07-28T00:00:00.000Z"),
+      remark: "",
+      searchText: "",
+      createdAt: new Date("2026-07-28T00:00:00.000Z"),
+      updatedAt: new Date("2026-07-28T00:00:00.000Z")
+    }], { encrypt: vi.fn(), decrypt: vi.fn(() => "a|b|1782303418") }, "xlsx");
+    const workbook = XLSX.read(output, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0] ?? ""];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet!, { defval: "" });
+
+    expect(rows[0]?.["密码"]).toBe("");
+  });
+
   it("exports unknown sale status with its Chinese label", () => {
     const output = exportAccounts([{
       _id: "507f1f77bcf86cd799439011",
@@ -76,6 +141,7 @@ describe("exportAccounts", () => {
 
     expect(Object.keys(rows[0] ?? {})).toEqual([
       "抖音号",
+      "密码",
       "sec_uid",
       "注册时间",
       "OP名称",
@@ -123,9 +189,9 @@ describe("exportAccounts", () => {
     const workbook = XLSX.read(buffer, { type: "buffer", cellNF: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0] ?? ""];
 
-    expect(sheet?.C2?.t).toBe("s");
-    expect(sheet?.C2?.v).toBe("2026-07-11");
-    expect(sheet?.C2?.z).toBe("@");
+    expect(sheet?.D2?.t).toBe("s");
+    expect(sheet?.D2?.v).toBe("2026-07-11");
+    expect(sheet?.D2?.z).toBe("@");
   });
 
   it("exports short OP and project immediately after OP卡密", () => {
@@ -179,12 +245,15 @@ describe("exportAccounts", () => {
 
     expect(sheet?.A2).toMatchObject({ t: "s", z: "@" });
     expect(sheet?.B2).toMatchObject({ t: "s", z: "@" });
-    expect(sheet?.F2).toMatchObject({ t: "s", v: "123456789", z: "@" });
+    expect(sheet?.C2).toMatchObject({ t: "s", z: "@" });
+    expect(sheet?.D2).toMatchObject({ t: "s", z: "@" });
+    expect(sheet?.G2).toMatchObject({ t: "s", v: "123456789", z: "@" });
   });
 
   it("includes 项目 in import templates without a short OP column", () => {
     const csv = exportTemplate("csv").toString("utf8");
 
+    expect(csv).toContain("抖音号,密码,注册时间");
     expect(csv).toContain("OP卡密,项目,归属人");
     expect(csv).not.toContain("短 OP");
   });

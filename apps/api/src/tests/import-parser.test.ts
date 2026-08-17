@@ -9,6 +9,30 @@ function workbookBuffer(rows: Record<string, unknown>[]): Buffer {
 }
 
 describe("parseImport", () => {
+  it("imports the optional 密码 column", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      密码: "douyin-pass",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.accountPassword).toBe("douyin-pass");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("defaults old import files without 密码 to an empty password", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.accountPassword).toBe("");
+  });
+
   it("reads a UTF-8 Chinese CSV without a BOM", () => {
     const csv = [
       "抖音号,注册时间,OP名称,OP卡密,归属人,注册地区,售卖状态,备注",

@@ -169,6 +169,7 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
     const projectLabel = String(source["项目"] ?? "").trim();
     const candidate = {
       douyinId,
+      accountPassword: String(source["密码"] ?? "").trim(),
       registeredAt: normalizedDate(pickValue(source, "注册时间", "时间")),
       opName: String(pickValue(source, "OP名称", "op名称")).trim(),
       opSecret: String(pickValue(source, "OP卡密", "op卡密")).trim(),
