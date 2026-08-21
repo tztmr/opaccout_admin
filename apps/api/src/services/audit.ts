@@ -29,6 +29,9 @@ function sanitizeInline(value: string, maxLength: number): string {
 export function createAuditService(writer: AuditWriter = AuditLogModel) {
   return {
     async write(event: AuditEvent): Promise<void> {
+      const accountKind = event.accountKind === "google" || event.accountKind === "email"
+        ? event.accountKind
+        : undefined;
       await writer.create({
         action: sanitizeInline(event.action, 100),
         targetType: sanitizeInline(event.targetType, 100),
@@ -36,6 +39,7 @@ export function createAuditService(writer: AuditWriter = AuditLogModel) {
         changedFields: [
           ...new Set(event.changedFields.filter((field) => ALLOWED_CHANGED_FIELDS.has(field)))
         ],
+        ...(accountKind ? { accountKind } : {}),
         count: event.count,
         ip: sanitizeInline(event.ip, 128),
         userAgent: sanitizeInline(event.userAgent, 512),

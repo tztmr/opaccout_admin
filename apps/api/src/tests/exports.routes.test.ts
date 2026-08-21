@@ -50,6 +50,7 @@ describe("exports routes", () => {
       expect.objectContaining({
         action: "account.exported",
         targetIds: ["a", "b"],
+        accountKind: "google",
         changedFields: ["email", "opSecret", "accountPassword"]
       })
     );
@@ -63,11 +64,12 @@ describe("exports routes", () => {
       username: "admin",
       password: "a-long-admin-password"
     });
+    const audit = { write: vi.fn(async () => undefined) };
     const app = createApp({
       config: testConfig,
       adminAuth,
       cipher: createSecretCipher(randomBytes(32)),
-      audit: { write: vi.fn(async () => undefined) }
+      audit
     });
     const agent = new request.agent(app);
     await agent.post("/api/auth/login").send({
@@ -86,6 +88,11 @@ describe("exports routes", () => {
     expect(response.headers["content-disposition"]).toContain("douyin-email-accounts.xlsx");
     expect(find).toHaveBeenCalledWith({ accountKind: "email", owner: "张三" });
     expect(sort).toHaveBeenCalledWith({ registeredAt: -1, _id: -1 });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "account.exported",
+      accountKind: "email",
+      changedFields: ["email", "opSecret", "accountPassword"]
+    }));
   });
 
   it("matches template kind queries with their download filenames", async () => {

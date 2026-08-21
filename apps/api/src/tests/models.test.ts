@@ -1,8 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { ACCOUNT_KINDS } from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
+import { AuditLogModel } from "../models/audit-log";
 import { ImportJobModel } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
+
+describe("AuditLog model", () => {
+  it("stores the non-sensitive account kind for export audit records", () => {
+    expect(AuditLogModel.schema.path("accountKind")?.options.enum).toEqual(ACCOUNT_KINDS);
+  });
+});
 
 describe("Account model", () => {
   it("defines unique identity indexes", () => {

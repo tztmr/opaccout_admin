@@ -7,10 +7,11 @@ describe("audit service", () => {
     const audit = createAuditService({ create });
 
     await audit.write({
-      action: "account.updated",
+      action: "account.exported",
       targetType: "account",
       targetIds: ["account-id"],
       changedFields: ["email", "owner", "opSecret", "accountPassword", "secUid", "cookie"],
+      accountKind: "email",
       count: 1,
       ip: "127.0.0.1",
       userAgent: "Browser\r\nInjected",
@@ -21,10 +22,11 @@ describe("audit service", () => {
     } as never);
 
     expect(create).toHaveBeenCalledWith({
-      action: "account.updated",
+      action: "account.exported",
       targetType: "account",
       targetIds: ["account-id"],
       changedFields: ["email", "owner", "opSecret", "accountPassword", "secUid"],
+      accountKind: "email",
       count: 1,
       ip: "127.0.0.1",
       userAgent: "Browser Injected",

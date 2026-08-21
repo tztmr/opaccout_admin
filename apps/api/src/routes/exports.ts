@@ -5,6 +5,7 @@ import type { SecretCipher } from "../services/encryption";
 import { exportAccounts } from "../services/exporter";
 import type { AuditContext } from "../services/accounts";
 import { buildAccountKindFilter } from "../services/account-kind";
+import type { AuditEvent } from "../services/audit";
 
 function queryString(
   query: Record<string, unknown>,
@@ -79,10 +80,10 @@ export function buildExportFilter(query: unknown): Record<string, unknown> {
   return filter;
 }
 
-export function createExportsRouter(cipher: SecretCipher, audit: { write(event: {
-  action: string; targetType: string; targetIds: string[]; changedFields: string[];
-  count: number; ip: string; userAgent: string; requestId: string;
-}): Promise<void> }): Router {
+export function createExportsRouter(
+  cipher: SecretCipher,
+  audit: { write(event: AuditEvent): Promise<void> }
+): Router {
   const router = Router();
   const handleExport = async (
     source: unknown,
@@ -109,7 +110,8 @@ export function createExportsRouter(cipher: SecretCipher, audit: { write(event: 
     };
     await audit.write({
       action: "account.exported", targetType: "account",
-      targetIds: ids, changedFields: ["email", "opSecret", "accountPassword"], count: accounts.length, ...context
+      targetIds: ids, changedFields: ["email", "opSecret", "accountPassword"],
+      accountKind, count: accounts.length, ...context
     });
     res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.attachment(`douyin-${accountKind}-accounts.${format}`).send(
