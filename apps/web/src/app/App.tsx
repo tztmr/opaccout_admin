@@ -3,6 +3,7 @@ import { FileClock, ListChecks, LogOut, Settings, Users } from "lucide-react";
 import { Navigate, NavLink, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "../api";
 import { AccountsPage } from "../features/AccountsPage";
+import { ACCOUNT_PAGE_CONFIG } from "../features/account-page-config";
 import { ImportsPage } from "../features/ImportsPage";
 import { SimplePage } from "../features/SimplePage";
 import { AuthEntry } from "../features/AuthEntry";
@@ -35,7 +36,8 @@ function Shell() {
     window.location.assign("/login");
   };
   const links = [
-    ["/accounts", "抖音账号", Users],
+    [ACCOUNT_PAGE_CONFIG.google.route, ACCOUNT_PAGE_CONFIG.google.navLabel, Users],
+    [ACCOUNT_PAGE_CONFIG.email.route, ACCOUNT_PAGE_CONFIG.email.navLabel, Users],
     ["/imports", "导入记录", FileClock],
     ["/logs", "操作日志", ListChecks],
     ["/settings", "系统设置", Settings]
@@ -49,11 +51,13 @@ function Shell() {
       <button className="logout" onClick={logout}><LogOut size={18}/><span>退出登录</span></button>
     </aside>
     <main className="main"><Routes>
-      <Route path="/accounts" element={<AccountsPage/>}/>
+      <Route path="/accounts" element={<Navigate to="/accounts/google" replace/>}/>
+      <Route path="/accounts/google" element={<AccountsPage key="google" accountKind="google"/>}/>
+      <Route path="/accounts/email" element={<AccountsPage key="email" accountKind="email"/>}/>
       <Route path="/imports" element={<ImportsPage/>}/>
       <Route path="/logs" element={<SimplePage type="logs"/>}/>
       <Route path="/settings" element={<SimplePage type="settings"/>}/>
-      <Route path="*" element={<Navigate to="/accounts" replace/>}/>
+      <Route path="*" element={<Navigate to="/accounts/google" replace/>}/>
     </Routes></main>
   </div>;
 }

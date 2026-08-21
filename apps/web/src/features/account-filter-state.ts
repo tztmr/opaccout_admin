@@ -1,4 +1,4 @@
-import type { SaleStatus } from "@douyin-admin/shared";
+import type { AccountKind, SaleStatus } from "@douyin-admin/shared";
 
 export const DEFAULT_ACCOUNT_SALE_STATUS: SaleStatus = "unknown";
 
@@ -14,9 +14,11 @@ const FILTER_KEYS = [
 
 export function buildAccountExportParams(
   url: URLSearchParams,
-  selected: Set<string>
+  selected: Set<string>,
+  accountKind: AccountKind
 ): {
   format: "xlsx";
+  accountKind: AccountKind;
   ids?: string[];
   keyword?: string;
   sortDirection?: string;
@@ -28,6 +30,7 @@ export function buildAccountExportParams(
 } {
   const result: {
     format: "xlsx";
+    accountKind: AccountKind;
     ids?: string[];
     keyword?: string;
     sortDirection?: string;
@@ -36,7 +39,7 @@ export function buildAccountExportParams(
     owner?: string;
     registeredFrom?: string;
     registeredTo?: string;
-  } = { format: "xlsx" };
+  } = { format: "xlsx", accountKind };
   if (selected.size > 0) {
     result.ids = [...selected];
     return result;

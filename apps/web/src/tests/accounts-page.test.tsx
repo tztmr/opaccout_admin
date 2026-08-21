@@ -25,7 +25,7 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function renderPage(initialEntries = ["/accounts"]) {
+function renderPage(initialEntries = ["/accounts/google"], accountKind: "google" | "email" = "google") {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
   });
@@ -34,7 +34,7 @@ function renderPage(initialEntries = ["/accounts"]) {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={initialEntries}>
         <Routes>
-          <Route path="/accounts" element={<AccountsPage />} />
+          <Route path="/accounts/*" element={<AccountsPage accountKind={accountKind} />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>
@@ -65,6 +65,91 @@ function accountFixture(index: number, accountStatus: "normal" | "banned" = "nor
 }
 
 describe("accounts page", () => {
+  it("keeps account data flows and the email column scoped to the active kind", async () => {
+    const account = { ...accountFixture(1), accountKind: "email" as const, email: "email-account@example.test" };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.startsWith("/api/accounts/owners?")) return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [account], page: 1, pageSize: 20, total: 1, totalPages: 1,
+        stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage(["/accounts/email"], "email");
+
+    expect(await screen.findByRole("heading", { name: "抖音邮箱号管理" })).toBeInTheDocument();
+    expect(screen.getAllByRole("columnheader")).toHaveLength(18);
+    expect(screen.getByRole("columnheader", { name: "邮箱" })).toBeInTheDocument();
+    expect((await screen.findByText(account.email)).closest("td")).toHaveAttribute("title", account.email);
+    await waitFor(() => expect(fetchMock.mock.calls.map(([input]) => String(input)).some((path) =>
+      path.startsWith("/api/accounts?") && path.includes("accountKind=email")
+    )).toBe(true));
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).some((path) =>
+      path === "/api/accounts/owners?accountKind=email"
+    )).toBe(true);
+  });
+
+  it("submits email kind and email on create without allowing kind changes on edit", async () => {
+    const created: unknown[] = [];
+    const updated: unknown[] = [];
+    const account = { ...accountFixture(2), accountKind: "email" as const, email: "existing-email@example.test" };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [account], page: 1, pageSize: 20, total: 1, totalPages: 1,
+        stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      if (path === "/api/accounts/check-douyin") return json({ secUid: "MS4wLjABAAAA-new", accountStatus: "normal" });
+      if (path === "/api/accounts") {
+        created.push(JSON.parse(String(init?.body)));
+        return json({});
+      }
+      if (path === "/api/accounts/account-2") {
+        updated.push(JSON.parse(String(init?.body)));
+        return json({});
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/accounts/email"], "email");
+    await user.click(await screen.findByRole("button", { name: "新增邮箱号" }));
+    expect(screen.getByLabelText("邮箱")).toHaveAttribute("type", "email");
+    expect(screen.queryByLabelText("邮箱密码")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("抖音号"), "93900112233");
+    await user.type(screen.getByLabelText("邮箱"), "new-email@example.test");
+    await user.type(screen.getByLabelText("OP卡密"), "a|b|1782303418");
+    await user.type(
+      within(screen.getByRole("heading", { name: "新增邮箱号" }).closest(".drawer")!).getByLabelText("归属人"),
+      "小王"
+    );
+    await user.click(screen.getByRole("button", { name: "检测" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(created).toHaveLength(1));
+    expect(created[0]).toMatchObject({ accountKind: "email", email: "new-email@example.test" });
+
+    await user.click((await screen.findAllByRole("button", { name: "编辑" }))[0]!);
+    await user.clear(screen.getByLabelText("邮箱"));
+    await user.type(screen.getByLabelText("邮箱"), "updated-email@example.test");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({ email: "updated-email@example.test" });
+    expect(updated[0]).not.toHaveProperty("accountKind");
+
+    await user.click((await screen.findAllByRole("button", { name: "编辑" }))[0]!);
+    const emailInput = screen.getByLabelText("邮箱");
+    await user.clear(emailInput);
+    await user.type(emailInput, "not-an-email");
+    expect(emailInput).toBeInvalid();
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(updated).toHaveLength(1);
+  });
+
   it("renders semantic columns and preserves full values as truncation titles", async () => {
     const account = accountFixture(1);
     account.secUid = "MS4wLjABAAAA-a-long-sec-uid-for-truncation";
@@ -73,7 +158,7 @@ describe("accounts page", () => {
     account.remark = "一段很长的备注内容用于截断提示";
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [account],
@@ -106,7 +191,7 @@ describe("accounts page", () => {
     const editPayloads: unknown[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -197,7 +282,7 @@ describe("accounts page", () => {
     await user.click(screen.getByRole("button", { name: "复制短 OP 链接 123456789" }));
     expect(writeText).toHaveBeenLastCalledWith("https://op.tztright.qzz.io/123456789");
 
-    await user.click(screen.getByRole("button", { name: "新增账号" }));
+    await user.click(screen.getByRole("button", { name: "新增谷歌账号" }));
     expect(screen.getByLabelText("项目")).toHaveValue("douyin");
     const passwordInput = screen.getByLabelText("密码");
     expect(passwordInput).toHaveProperty("type", "text");
@@ -206,7 +291,7 @@ describe("accounts page", () => {
     await user.type(passwordInput, "new-account-pass");
     await user.type(screen.getByLabelText("OP卡密"), "a|b|1782303418");
     await user.type(
-      within(screen.getByRole("heading", { name: "新增账号" }).closest(".drawer")!).getByLabelText("归属人"),
+      within(screen.getByRole("heading", { name: "新增谷歌账号" }).closest(".drawer")!).getByLabelText("归属人"),
       "小王"
     );
     await user.click(screen.getByRole("button", { name: "检测" }));
@@ -214,7 +299,9 @@ describe("accounts page", () => {
     await user.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => {
       expect(createPayloads).toContainEqual(expect.objectContaining({
-        accountPassword: "new-account-pass"
+        accountPassword: "new-account-pass",
+        accountKind: "google",
+        email: ""
       }));
     });
     const [firstEdit] = screen.getAllByRole("button", { name: "编辑" });
@@ -241,7 +328,7 @@ describe("accounts page", () => {
   it("renders sec_uid as a Douyin profile link and opens a batch status dialog", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -301,7 +388,7 @@ describe("accounts page", () => {
   it("submits multiline keyword searches through the account query", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: [] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [],
@@ -335,7 +422,7 @@ describe("accounts page", () => {
   it("uses a POST query for oversized multiline searches", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: [] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
       if (path === "/api/accounts/query") {
         expect(init?.method).toBe("POST");
         expect(init?.body).toBeTruthy();
@@ -388,7 +475,7 @@ describe("accounts page", () => {
   it("shows missing douyin ids after a multiline search", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: [] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -442,7 +529,7 @@ describe("accounts page", () => {
     const recheckRequest = deferred<Response>();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -496,7 +583,7 @@ describe("accounts page", () => {
     const batchRequest = deferred<Response>();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -554,7 +641,7 @@ describe("accounts page", () => {
   it("keeps selected accounts after a batch recheck completes", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -615,7 +702,7 @@ describe("accounts page", () => {
   it("keeps selected accounts after a batch OP recheck completes", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -677,7 +764,7 @@ describe("accounts page", () => {
     const batchRequest = deferred<Response>();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         const params = new URLSearchParams(path.split("?")[1] ?? "");
         expect(params.get("page")).toBe("1");
@@ -756,7 +843,7 @@ describe("accounts page", () => {
     const batchRequest = deferred<Response>();
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         const params = new URLSearchParams(path.split("?")[1] ?? "");
         expect(params.get("page")).toBe("1");
@@ -838,7 +925,7 @@ describe("accounts page", () => {
     const submittedBatches: string[][] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items,
@@ -879,7 +966,7 @@ describe("accounts page", () => {
     let batchNumber = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items,
@@ -930,7 +1017,7 @@ describe("accounts page", () => {
     let submittedIds: string[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [normal, banned],
@@ -969,7 +1056,7 @@ describe("accounts page", () => {
     const account = accountFixture(1, "normal");
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [account],
@@ -1016,7 +1103,7 @@ describe("accounts page", () => {
     });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         const params = new URLSearchParams(path.split("?")[1] ?? "");
         expect(params.get("page")).toBe("1");
@@ -1105,7 +1192,7 @@ describe("accounts page", () => {
   it("shows 注册地区 and submits a batch registeredRegion update", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -1169,7 +1256,7 @@ describe("accounts page", () => {
   it("opens a batch accountStatus dialog and submits the update", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -1234,7 +1321,7 @@ describe("accounts page", () => {
   it("shows failed batch recheck count and keeps only failed accounts selected", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -1311,7 +1398,7 @@ describe("accounts page", () => {
   it("shows failed batch OP recheck count and keeps only failed accounts selected", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [
@@ -1388,7 +1475,7 @@ describe("accounts page", () => {
   it("opens a batch remark dialog and submits the remark update", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      if (path === "/api/accounts/owners") return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
       if (path.startsWith("/api/accounts?")) {
         return json({
           items: [

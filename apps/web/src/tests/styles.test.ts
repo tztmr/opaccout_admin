@@ -37,6 +37,17 @@ describe("global form control styles", () => {
     expect(actionsRule).toContain("gap: 3px;");
   });
 
+  it("adds only the email page width needed for its extra column", () => {
+    const emailTableRule =
+      styles.match(/\.accounts-table-email\s*\{[^}]+\}/)?.[0] ?? "";
+    const emailColumnRule =
+      styles.match(/\.accounts-table \.col-email\s*\{[^}]+\}/)?.[0] ?? "";
+
+    expect(emailTableRule).toContain("min-width: 1518px;");
+    expect(emailTableRule).not.toContain("1720px");
+    expect(emailColumnRule).toContain("width: 108px;");
+  });
+
   it("keeps table overflow and checkbox clipping scoped separately", () => {
     const tableScrollRule = styles.match(/\.table-scroll\s*\{[^}]+\}/)?.[0] ?? "";
     const checkCellRule = styles.match(/\.check-cell,[\s\S]*?\n}\n/)?.[0] ?? "";

@@ -76,11 +76,13 @@ tbody tr:hover { background: #fafcff; }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #657087; }
 .short-op-cell .link { margin-left: 8px; }
 .accounts-table { min-width: 1410px; table-layout: fixed; }
+.accounts-table-email { min-width: 1518px; }
 .accounts-table th,
 .accounts-table td { padding-inline: 6px; }
 .accounts-table .col-check { width: 38px; }
 .accounts-table .col-index { width: 42px; }
 .accounts-table .col-douyin { width: 94px; }
+.accounts-table .col-email { width: 108px; }
 .accounts-table .col-password { width: 88px; }
 .accounts-table .col-secuid { width: 112px; }
 .accounts-table .col-date { width: 82px; }
