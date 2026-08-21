@@ -336,6 +336,98 @@ describe("imports page", () => {
     expect(screen.queryByText("导入任务已提交，将在后台继续处理")).not.toBeInTheDocument();
   });
 
+  it("keeps a newer preview when an earlier execute succeeds in the same account kind", async () => {
+    const executeResponse = deferred<Response>();
+    let previewCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") {
+        previewCalls += 1;
+        return Promise.resolve(json(
+          previewCalls === 1
+            ? { previewId: "email-preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }
+            : { previewId: "email-preview-b", totalRows: 2, validRows: 2, errors: [], rows: [] },
+          201
+        ));
+      }
+      if (path === "/api/imports/execute") return executeResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["a"], "email-a.csv", { type: "text/csv" })] }
+    });
+    await screen.findByRole("button", { name: "确认导入 1 行" });
+    await user.click(screen.getByRole("button", { name: "确认导入 1 行" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/imports/execute",
+      expect.objectContaining({ method: "POST" })
+    ));
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] }
+    });
+    await screen.findByText(/共 2 行，可导入 2 行/);
+
+    await act(async () => {
+      executeResponse.resolve(json({ jobId: "email-job-a" }, 202));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/共 2 行，可导入 2 行/)).toBeInTheDocument();
+    expect(screen.queryByText("导入任务已提交，将在后台继续处理")).not.toBeInTheDocument();
+  });
+
+  it("keeps a newer preview when an earlier execute fails in the same account kind", async () => {
+    const executeResponse = deferred<Response>();
+    let previewCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") {
+        previewCalls += 1;
+        return Promise.resolve(json(
+          previewCalls === 1
+            ? { previewId: "email-preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }
+            : { previewId: "email-preview-b", totalRows: 2, validRows: 2, errors: [], rows: [] },
+          201
+        ));
+      }
+      if (path === "/api/imports/execute") return executeResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["a"], "email-a.csv", { type: "text/csv" })] }
+    });
+    await screen.findByRole("button", { name: "确认导入 1 行" });
+    await user.click(screen.getByRole("button", { name: "确认导入 1 行" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/imports/execute",
+      expect.objectContaining({ method: "POST" })
+    ));
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] }
+    });
+    await screen.findByText(/共 2 行，可导入 2 行/);
+
+    await act(async () => {
+      executeResponse.reject(new Error("旧导入失败"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/共 2 行，可导入 2 行/)).toBeInTheDocument();
+    expect(screen.queryByText("旧导入失败")).not.toBeInTheDocument();
+  });
+
   it("labels historical import jobs without a kind as Google accounts", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === "/api/imports") {
