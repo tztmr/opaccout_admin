@@ -1,13 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { ACCOUNT_KINDS } from "@douyin-admin/shared";
+import {
+  ACCOUNT_COLUMN_IDS,
+  DEFAULT_ACCOUNT_COLUMN_ORDER,
+  ACCOUNT_KINDS
+} from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
 import { AuditLogModel } from "../models/audit-log";
 import { ImportJobModel } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
+import { SettingModel } from "../models/setting";
 
 describe("AuditLog model", () => {
   it("stores the non-sensitive account kind for export audit records", () => {
     expect(AuditLogModel.schema.path("accountKind")?.options.enum).toEqual(ACCOUNT_KINDS);
+  });
+});
+
+describe("Setting model", () => {
+  it("uses shared column enums and independent default column order arrays", () => {
+    expect(SettingModel.schema.path("googleColumnOrder")?.options.enum).toEqual(
+      ACCOUNT_COLUMN_IDS
+    );
+    expect(SettingModel.schema.path("emailColumnOrder")?.options.enum).toEqual(
+      ACCOUNT_COLUMN_IDS
+    );
+
+    const first = new SettingModel({ key: "admin", defaultPageSize: 20, sessionHours: 12 });
+    const second = new SettingModel({ key: "admin", defaultPageSize: 20, sessionHours: 12 });
+    first.googleColumnOrder.pop();
+
+    expect(first.googleColumnOrder).toEqual(DEFAULT_ACCOUNT_COLUMN_ORDER.google.slice(0, -1));
+    expect(second.googleColumnOrder).toEqual(DEFAULT_ACCOUNT_COLUMN_ORDER.google);
+    expect(second.emailColumnOrder).toEqual(DEFAULT_ACCOUNT_COLUMN_ORDER.email);
   });
 });
 

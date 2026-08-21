@@ -1,6 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
+import { AccountKindSchema } from "@douyin-admin/shared";
 import { SettingModel } from "../models/setting";
+import {
+  getAccountColumnOrders,
+  saveAccountColumnOrder
+} from "../services/account-column-settings";
 
 const SettingsSchema = z.object({
   defaultPageSize: z.number().int().min(10).max(100),
@@ -21,6 +26,21 @@ function publicSettings(settings: {
 
 export function createSettingsRouter(): Router {
   const router = Router();
+  router.get("/account-columns", async (_req, res, next) => {
+    try {
+      res.json(await getAccountColumnOrders());
+    } catch (error) { next(error); }
+  });
+  router.patch("/account-columns/:accountKind", async (req, res, next) => {
+    try {
+      const accountKind = AccountKindSchema.parse(req.params.accountKind);
+      const body = z.object({ order: z.array(z.string()) }).strict().parse(req.body);
+      res.json({
+        accountKind,
+        order: await saveAccountColumnOrder(accountKind, body.order)
+      });
+    } catch (error) { next(error); }
+  });
   router.get("/", async (_req, res, next) => {
     try {
       const settings = await SettingModel.findOneAndUpdate(
