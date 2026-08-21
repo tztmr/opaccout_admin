@@ -2,6 +2,7 @@ import { AuditLogModel, type AuditLogRecord } from "../models/audit-log";
 
 const ALLOWED_CHANGED_FIELDS = new Set([
   "douyinId",
+  "email",
   "secUid",
   "registeredAt",
   "opName",

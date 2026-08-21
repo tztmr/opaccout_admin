@@ -39,12 +39,18 @@ describe("exports routes", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(find).toHaveBeenCalledWith({ _id: { $in: ["a", "b"] } });
+    expect(response.headers["content-disposition"]).toContain("douyin-google-accounts.xlsx");
+    expect(find).toHaveBeenCalledWith({
+      $and: [
+        { $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }] },
+        { _id: { $in: ["a", "b"] } }
+      ]
+    });
     expect(audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "account.exported",
         targetIds: ["a", "b"],
-        changedFields: ["opSecret", "accountPassword"]
+        changedFields: ["email", "opSecret", "accountPassword"]
       })
     );
   });
@@ -71,12 +77,41 @@ describe("exports routes", () => {
 
     const response = await agent.post("/api/exports/accounts").send({
       format: "xlsx",
+      accountKind: "email",
       owner: "张三",
       sortDirection: "desc"
     });
 
     expect(response.status).toBe(200);
-    expect(find).toHaveBeenCalledWith({ owner: "张三" });
+    expect(response.headers["content-disposition"]).toContain("douyin-email-accounts.xlsx");
+    expect(find).toHaveBeenCalledWith({ accountKind: "email", owner: "张三" });
     expect(sort).toHaveBeenCalledWith({ registeredAt: -1, _id: -1 });
+  });
+
+  it("matches template kind queries with their download filenames", async () => {
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const app = createApp({
+      config: testConfig,
+      adminAuth,
+      cipher: createSecretCipher(randomBytes(32))
+    });
+    const agent = new request.agent(app);
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const [google, email] = await Promise.all([
+      agent.get("/api/imports/template?format=xlsx"),
+      agent.get("/api/imports/template?format=xlsx&accountKind=email")
+    ]);
+
+    expect(google.status).toBe(200);
+    expect(google.headers["content-disposition"]).toContain("douyin-google-account-template.xlsx");
+    expect(email.status).toBe(200);
+    expect(email.headers["content-disposition"]).toContain("douyin-email-account-template.xlsx");
   });
 });

@@ -3,7 +3,22 @@ import { buildExportFilter } from "../routes/exports";
 
 describe("export account filters", () => {
   it("includes an exact owner filter", () => {
-    expect(buildExportFilter({ owner: " 张三 " })).toEqual({ owner: "张三" });
+    expect(buildExportFilter({ owner: " 张三 " })).toEqual({
+      $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }],
+      owner: "张三"
+    });
+  });
+
+  it("defaults export filters to historical-aware Google scope", () => {
+    expect(buildExportFilter({})).toEqual({
+      $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }]
+    });
+  });
+
+  it("uses the exact email scope for email exports", () => {
+    expect(buildExportFilter({ accountKind: "email" })).toEqual({
+      accountKind: "email"
+    });
   });
 
   it("matches each non-empty keyword line in batch search", () => {
@@ -23,6 +38,7 @@ describe("export account filters", () => {
       registeredFrom: "2026-07-01",
       registeredTo: "2026-07-31"
     })).toEqual({
+      $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }],
       saleStatus: "recovered",
       accountStatus: "normal",
       registeredAt: {

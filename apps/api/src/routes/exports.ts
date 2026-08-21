@@ -1,9 +1,10 @@
 import { Router, type Request, type Response } from "express";
-import { AccountListQuerySchema } from "@douyin-admin/shared";
+import { AccountKindSchema, AccountListQuerySchema } from "@douyin-admin/shared";
 import { AccountModel, type AccountRecord } from "../models/account";
 import type { SecretCipher } from "../services/encryption";
 import { exportAccounts } from "../services/exporter";
 import type { AuditContext } from "../services/accounts";
+import { buildAccountKindFilter } from "../services/account-kind";
 
 function queryString(
   query: Record<string, unknown>,
@@ -56,7 +57,8 @@ export function buildExportFilter(query: unknown): Record<string, unknown> {
     ...(queryString(source, "registeredFrom") ? { registeredFrom: queryString(source, "registeredFrom") } : {}),
     ...(queryString(source, "registeredTo") ? { registeredTo: queryString(source, "registeredTo") } : {})
   });
-  const filter: Record<string, unknown> = {};
+  const accountKind = AccountKindSchema.parse(source.accountKind ?? "google");
+  const filter: Record<string, unknown> = { ...buildAccountKindFilter(accountKind) };
   if (listQuery.keyword) {
     const regex = buildKeywordRegex(listQuery.keyword);
     if (regex) filter.searchText = regex;
@@ -92,10 +94,11 @@ export function createExportsRouter(cipher: SecretCipher, audit: { write(event: 
         ? source as Record<string, unknown>
         : {};
     const format = payload.format === "csv" ? "csv" : "xlsx";
+    const accountKind = AccountKindSchema.parse(payload.accountKind ?? "google");
     const ids = queryStringArray(payload, "ids");
     const sortDirection = payload.sortDirection === "desc" ? -1 : 1;
     const filter: Record<string, unknown> = ids.length
-      ? { _id: { $in: ids } }
+      ? { $and: [buildAccountKindFilter(accountKind), { _id: { $in: ids } }] }
       : buildExportFilter(payload);
     const accounts = await AccountModel.find(filter)
       .sort({ registeredAt: sortDirection, _id: sortDirection })
@@ -106,11 +109,16 @@ export function createExportsRouter(cipher: SecretCipher, audit: { write(event: 
     };
     await audit.write({
       action: "account.exported", targetType: "account",
-      targetIds: ids, changedFields: ["opSecret", "accountPassword"], count: accounts.length, ...context
+      targetIds: ids, changedFields: ["email", "opSecret", "accountPassword"], count: accounts.length, ...context
     });
     res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.attachment(`douyin-accounts.${format}`).send(
-      exportAccounts(accounts as Array<AccountRecord & { _id: unknown }>, cipher, format)
+    res.attachment(`douyin-${accountKind}-accounts.${format}`).send(
+      exportAccounts(
+        accounts as Array<AccountRecord & { _id: unknown }>,
+        cipher,
+        format,
+        accountKind
+      )
     );
   };
   router.get("/accounts", async (req, res, next) => {

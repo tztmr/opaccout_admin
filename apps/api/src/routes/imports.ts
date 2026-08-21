@@ -47,8 +47,11 @@ export function createImportsRouter(cipher: SecretCipher): Router {
   const router = Router();
   router.get("/template", (req, res) => {
     const format = req.query.format === "csv" ? "csv" : "xlsx";
+    const accountKind = AccountKindSchema.parse(req.query.accountKind ?? "google");
     res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.attachment(`douyin-account-template.${format}`).send(exportTemplate(format));
+    res.attachment(`douyin-${accountKind}-account-template.${format}`).send(
+      exportTemplate(format, accountKind)
+    );
   });
   router.post("/preview", upload.single("file"), async (req, res, next) => {
     try {

@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import type { AccountKind } from "@douyin-admin/shared";
 import type { SecretCipher } from "./encryption";
 import type { AccountRecord } from "../models/account";
 import {
@@ -21,41 +22,58 @@ function markColumnAsText(sheet: XLSX.WorkSheet, columnIndex: number, rowCount: 
 export function exportAccounts(
   accounts: Array<AccountRecord & { _id: unknown }>,
   cipher: SecretCipher,
-  format: "xlsx" | "csv"
+  format: "xlsx" | "csv",
+  accountKind: AccountKind = "google"
 ): Buffer {
-  const rows = accounts.map((account) => ({
-    抖音号: account.douyinId,
-    密码: account.accountPassword
-      ? cipher.decrypt(account.accountPassword)
-      : "",
-    sec_uid: account.secUid,
-    注册时间: account.registeredAt.toISOString().slice(0, 10),
-    OP名称: account.opName,
-    OP卡密: cipher.decrypt(account.opSecret),
-    "短 OP": account.shortOpCode ?? "",
-    项目: OP_PROJECTS[account.opProject ?? DEFAULT_OP_PROJECT].name,
-    OP到期时间: account.opExpiresAt.toISOString(),
-    归属人: account.owner,
-    注册地区: account.registeredRegion,
-    售卖状态: SALE_STATUS_LABELS[account.saleStatus],
-    账号状态: ACCOUNT_STATUS_LABELS[account.accountStatus],
-    备注: account.remark
-  }));
-  const sheet = XLSX.utils.json_to_sheet(rows);
+  const headers = accountKind === "email"
+    ? ["抖音号", "邮箱", "密码", "sec_uid", "注册时间", "OP名称", "OP卡密", "短 OP", "项目", "OP到期时间", "归属人", "注册地区", "售卖状态", "账号状态", "备注"]
+    : ["抖音号", "密码", "sec_uid", "注册时间", "OP名称", "OP卡密", "短 OP", "项目", "OP到期时间", "归属人", "注册地区", "售卖状态", "账号状态", "备注"];
+  const rows = accounts.map((account) => {
+    const common = [
+      account.douyinId,
+      account.accountPassword ? cipher.decrypt(account.accountPassword) : "",
+      account.secUid,
+      account.registeredAt.toISOString().slice(0, 10),
+      account.opName,
+      cipher.decrypt(account.opSecret),
+      account.shortOpCode ?? "",
+      OP_PROJECTS[account.opProject ?? DEFAULT_OP_PROJECT].name,
+      account.opExpiresAt.toISOString(),
+      account.owner,
+      account.registeredRegion,
+      SALE_STATUS_LABELS[account.saleStatus],
+      ACCOUNT_STATUS_LABELS[account.accountStatus],
+      account.remark
+    ];
+    return accountKind === "email"
+      ? [common[0], account.email ?? "", ...common.slice(1)]
+      : common;
+  });
+  const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   if (format === "csv") return Buffer.from(XLSX.utils.sheet_to_csv(sheet), "utf8");
-  markColumnAsText(sheet, 0, rows.length);
-  markColumnAsText(sheet, 1, rows.length);
-  markColumnAsText(sheet, 2, rows.length);
-  markColumnAsText(sheet, 3, rows.length);
-  markColumnAsText(sheet, 6, rows.length);
+  const textColumns = accountKind === "email"
+    ? [0, 1, 2, 3, 4, 7]
+    : [0, 1, 2, 3, 6];
+  for (const columnIndex of textColumns) {
+    markColumnAsText(sheet, columnIndex, rows.length);
+  }
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, sheet, "抖音账号");
+  XLSX.utils.book_append_sheet(
+    workbook,
+    sheet,
+    accountKind === "email" ? "抖音邮箱号" : "抖音谷歌账号"
+  );
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
-export function exportTemplate(format: "xlsx" | "csv"): Buffer {
+export function exportTemplate(
+  format: "xlsx" | "csv",
+  accountKind: AccountKind = "google"
+): Buffer {
   const sheet = XLSX.utils.aoa_to_sheet([[
-    "抖音号", "密码", "注册时间", "OP名称", "OP卡密", "项目", "归属人", "注册地区", "售卖状态", "备注"
+    "抖音号",
+    ...(accountKind === "email" ? ["邮箱"] : []),
+    "密码", "注册时间", "OP名称", "OP卡密", "项目", "归属人", "注册地区", "售卖状态", "备注"
   ]]);
   if (format === "csv") return Buffer.from(XLSX.utils.sheet_to_csv(sheet), "utf8");
   const workbook = XLSX.utils.book_new();
