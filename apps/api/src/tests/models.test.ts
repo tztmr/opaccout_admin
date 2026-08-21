@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ACCOUNT_KINDS } from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
 import { ImportPreviewModel } from "../models/import-preview";
 
@@ -23,11 +24,20 @@ describe("Account model", () => {
         partialFilterExpression: { shortOpCode: { $type: "string" } }
       })
     ]);
+    expect(indexes).toContainEqual([
+      { accountKind: 1, registeredAt: 1, _id: 1 },
+      expect.objectContaining({ background: true })
+    ]);
+    expect(AccountModel.schema.path("accountKind")?.options.enum).toEqual(ACCOUNT_KINDS);
+    expect(AccountModel.schema.path("email")).toBeDefined();
+    expect(AccountModel.schema.path("email")?.options.default).toBe("");
   });
 
   it("accepts unknown and rejects values outside the shared status enums", async () => {
     const account = new AccountModel({
       douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
       secUid: "MS4wLjABAAAA-fixture",
       registeredAt: new Date("2026-07-28T00:00:00.000Z"),
       opName: "",
@@ -84,6 +94,8 @@ describe("Account model", () => {
     };
     const account = new AccountModel({
       douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
       secUid: "MS4wLjABAAAA-Fixture",
       registeredAt: new Date("2026-07-27T00:00:00.000Z"),
       opName: " 星河 ",
@@ -110,6 +122,7 @@ describe("Account model", () => {
     expect(account.searchText).toContain("星河");
     expect(account.searchText).toContain("123456789");
     expect(account.searchText).toContain("抖音");
+    expect(account.searchText).toContain("mail@example.com");
     expect(account.toObject().accountPassword).toEqual(encryptedPassword);
     expect(account.searchText).not.toContain("douyin-pass");
   });

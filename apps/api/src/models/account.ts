@@ -1,10 +1,12 @@
 import {
   ACCOUNT_STATUSES,
+  ACCOUNT_KINDS,
   DEFAULT_OP_PROJECT,
   OpProjectSchema,
   OP_PROJECTS,
   SALE_STATUSES,
   type AccountStatus,
+  type AccountKind,
   type SaleStatus
 } from "@douyin-admin/shared";
 import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
@@ -12,6 +14,8 @@ import type { EncryptedValue } from "../services/encryption";
 
 export type AccountRecord = {
   douyinId: string;
+  accountKind?: AccountKind;
+  email?: string;
   secUid: string;
   registeredAt: Date;
   opName: string;
@@ -46,6 +50,8 @@ const EncryptedValueSchema = new Schema<EncryptedValue>(
 const AccountSchema = new Schema<AccountRecord>(
   {
     douyinId: { type: String, required: true, trim: true },
+    accountKind: { type: String, required: false, enum: ACCOUNT_KINDS },
+    email: { type: String, required: false, trim: true, maxlength: 254, default: "" },
     secUid: { type: String, required: false, trim: true, default: "" },
     registeredAt: { type: Date, required: true },
     opName: { type: String, default: "", trim: true, maxlength: 100 },
@@ -92,11 +98,13 @@ AccountSchema.index({ saleStatus: 1 });
 AccountSchema.index({ accountStatus: 1 });
 AccountSchema.index({ registeredAt: 1 });
 AccountSchema.index({ owner: 1 });
+AccountSchema.index({ accountKind: 1, registeredAt: 1, _id: 1 });
 AccountSchema.index({ createdAt: -1, _id: -1 });
 
 AccountSchema.pre("validate", function buildSearchText() {
   this.searchText = [
     this.douyinId,
+    this.email,
     this.secUid,
     this.opName,
     this.shortOpCode,

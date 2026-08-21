@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AccountPatchSchema,
   AccountInputSchema,
   AccountListQuerySchema,
   ACCOUNT_STATUS_LABELS,
@@ -7,6 +8,47 @@ import {
 } from "./account";
 
 describe("AccountInputSchema", () => {
+  it("defaults Google accounts and normalizes email account addresses", () => {
+    const base = {
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold" as const,
+      remark: ""
+    };
+
+    expect(AccountInputSchema.parse(base)).toMatchObject({
+      accountKind: "google",
+      email: ""
+    });
+    expect(AccountInputSchema.parse({
+      ...base,
+      accountKind: "email",
+      email: " mail@example.com "
+    }).email).toBe("mail@example.com");
+  });
+
+  it("requires an email address for email accounts", () => {
+    const base = {
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold" as const,
+      remark: ""
+    };
+
+    expect(() => AccountInputSchema.parse({
+      ...base,
+      accountKind: "email",
+      email: ""
+    })).toThrow("邮箱不能为空");
+    expect(() => AccountPatchSchema.parse({ accountKind: "email" })).toThrow();
+  });
+
   it("accepts an optional Douyin account password", () => {
     const base = {
       douyinId: "94946893573",
@@ -139,6 +181,10 @@ describe("AccountInputSchema", () => {
 });
 
 describe("AccountListQuerySchema", () => {
+  it("defaults account lists to Google accounts", () => {
+    expect(AccountListQuerySchema.parse({}).accountKind).toBe("google");
+  });
+
   it("accepts an exact owner list filter", () => {
     expect(AccountListQuerySchema.parse({ owner: " 张三 " }).owner).toBe("张三");
   });

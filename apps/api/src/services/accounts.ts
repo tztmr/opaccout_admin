@@ -1,4 +1,5 @@
 import {
+  AccountPatchSchema,
   AccountInputSchema,
   AccountListQuerySchema,
   type AccountDto,
@@ -332,7 +333,7 @@ export function createAccountsService({
     },
 
     async update(id: string, rawPatch: unknown, context: AuditContext): Promise<AccountDto> {
-      const patch = AccountInputSchema.partial().strict().parse(rawPatch);
+      const patch = AccountPatchSchema.parse(rawPatch);
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
       const changedFields = Object.keys(patch);
