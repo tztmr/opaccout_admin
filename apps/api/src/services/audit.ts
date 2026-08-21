@@ -1,6 +1,8 @@
+import { ACCOUNT_COLUMN_IDS } from "@douyin-admin/shared";
 import { AuditLogModel, type AuditLogRecord } from "../models/audit-log";
 
 const ALLOWED_CHANGED_FIELDS = new Set([
+  ...ACCOUNT_COLUMN_IDS,
   "accountKind",
   "douyinId",
   "email",

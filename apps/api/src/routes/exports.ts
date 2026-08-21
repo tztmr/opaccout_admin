@@ -6,6 +6,8 @@ import { exportAccounts } from "../services/exporter";
 import type { AuditContext } from "../services/accounts";
 import { buildAccountKindFilter } from "../services/account-kind";
 import type { AuditEvent } from "../services/audit";
+import { buildAccountExportColumns } from "../services/account-export-columns";
+import { getAccountColumnOrder } from "../services/account-column-settings";
 
 function queryString(
   query: Record<string, unknown>,
@@ -96,6 +98,7 @@ export function createExportsRouter(
         : {};
     const format = payload.format === "csv" ? "csv" : "xlsx";
     const accountKind = AccountKindSchema.parse(payload.accountKind ?? "google");
+    const columnOrder = await getAccountColumnOrder(accountKind);
     const ids = queryStringArray(payload, "ids");
     const sortDirection = payload.sortDirection === "desc" ? -1 : 1;
     const filter: Record<string, unknown> = ids.length
@@ -110,7 +113,9 @@ export function createExportsRouter(
     };
     await audit.write({
       action: "account.exported", targetType: "account",
-      targetIds: ids, changedFields: ["email", "opSecret", "accountPassword"],
+      targetIds: ids,
+      changedFields: buildAccountExportColumns(accountKind, columnOrder, cipher)
+        .map((column) => column.id),
       accountKind, count: accounts.length, ...context
     });
     res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -119,7 +124,8 @@ export function createExportsRouter(
         accounts as Array<AccountRecord & { _id: unknown }>,
         cipher,
         format,
-        accountKind
+        accountKind,
+        columnOrder
       )
     );
   };

@@ -10,6 +10,7 @@ import { ImportPreviewModel } from "../models/import-preview";
 import type { SecretCipher } from "../services/encryption";
 import { exportTemplate } from "../services/exporter";
 import type { ImportParseResult } from "../services/import-parser";
+import { getAccountColumnOrder } from "../services/account-column-settings";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,13 +46,16 @@ const upload = multer({
 
 export function createImportsRouter(cipher: SecretCipher): Router {
   const router = Router();
-  router.get("/template", (req, res) => {
-    const format = req.query.format === "csv" ? "csv" : "xlsx";
-    const accountKind = AccountKindSchema.parse(req.query.accountKind ?? "google");
-    res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.attachment(`douyin-${accountKind}-account-template.${format}`).send(
-      exportTemplate(format, accountKind)
-    );
+  router.get("/template", async (req, res, next) => {
+    try {
+      const format = req.query.format === "csv" ? "csv" : "xlsx";
+      const accountKind = AccountKindSchema.parse(req.query.accountKind ?? "google");
+      const columnOrder = await getAccountColumnOrder(accountKind);
+      res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.attachment(`douyin-${accountKind}-account-template.${format}`).send(
+        exportTemplate(format, accountKind, columnOrder)
+      );
+    } catch (error) { next(error); }
   });
   router.post("/preview", upload.single("file"), async (req, res, next) => {
     try {
