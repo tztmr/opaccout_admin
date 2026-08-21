@@ -4,6 +4,7 @@ import {
   AccountListQuerySchema,
   type AccountDto,
   type AccountInput,
+  type AccountKind,
   type AccountListQuery,
   type AccountStats,
   type AccountStatus,
@@ -44,6 +45,7 @@ type AuditService = {
     targetType: string;
     targetIds: string[];
     changedFields: string[];
+    accountKind?: AccountKind;
     count: number;
     ip: string;
     userAgent: string;
@@ -175,7 +177,8 @@ export function createAccountsService({
     action: string,
     targetIds: string[],
     changedFields: string[],
-    context: AuditContext
+    context: AuditContext,
+    accountKind?: AccountKind
   ) {
     await audit.write({
       action,
@@ -183,6 +186,7 @@ export function createAccountsService({
       targetIds,
       changedFields,
       count: targetIds.length,
+      ...(accountKind ? { accountKind } : {}),
       ...context
     });
   }
@@ -197,6 +201,7 @@ export function createAccountsService({
 
     async create(rawInput: unknown, context: AuditContext): Promise<AccountDto> {
       const input = AccountInputSchema.parse(rawInput);
+      const accountKind = resolveAccountKind(input.accountKind);
       const [detected, opResult] = await Promise.all([
         detectDouyinStatus(checkDouyinId, input.douyinId),
         checkOpProfile(input.opSecret)
@@ -224,8 +229,9 @@ export function createAccountsService({
         await writeAudit(
           "account.created",
           [String(created._id)],
-          Object.keys(input),
-          context
+          Object.keys(input).filter((field) => field !== "email" || accountKind === "email"),
+          context,
+          accountKind
         );
         return toDto(created, cipher);
       } catch (error) {
@@ -349,11 +355,12 @@ export function createAccountsService({
       const patch = AccountPatchSchema.parse(rawPatch);
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
+      const accountKind = resolveAccountKind(account.accountKind);
       const changedFields = Object.keys(patch);
       assertBannedSaleStatusChange(account.accountStatus, patch.saleStatus);
 
       if ("email" in patch) {
-        if (resolveAccountKind(account.accountKind) === "email") {
+        if (accountKind === "email") {
           if (!patch.email) {
             throw new AppError(400, "EMAIL_REQUIRED", "邮箱不能为空");
           }
@@ -399,7 +406,7 @@ export function createAccountsService({
       } catch (error) {
         throw duplicateError(error) ?? error;
       }
-      await writeAudit("account.updated", [id], changedFields, context);
+      await writeAudit("account.updated", [id], changedFields, context, accountKind);
       return toDto(account, cipher);
     },
 

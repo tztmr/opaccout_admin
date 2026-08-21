@@ -124,7 +124,7 @@ describe("processImportRow", () => {
     expect(accounts.create).not.toHaveBeenCalled();
   });
 
-  it("rejects cross-kind duplicate updates without writing", async () => {
+  it.each(["skip", "update"] as const)("rejects a cross-kind duplicate with the %s strategy without writing", async (duplicateStrategy) => {
     const accounts = accountServiceStub();
     const emailInput: AccountInput = {
       ...input,
@@ -135,10 +135,11 @@ describe("processImportRow", () => {
     await expect(processImportRow(
       accounts,
       emailInput,
-      "update",
+      duplicateStrategy,
       context,
       vi.fn(async () => ({ _id: "google-id", accountKind: "google" as const }))
     )).rejects.toMatchObject({ code: "DOUYIN_ID_DUPLICATE" });
+    expect(accounts.create).not.toHaveBeenCalled();
     expect(accounts.update).not.toHaveBeenCalled();
   });
 

@@ -103,11 +103,11 @@ export async function processImportRow(
     AccountModel.findOne({ douyinId }).select("_id accountKind").lean()
 ): Promise<ImportRowOutcome> {
   const existing = await findExisting(input.douyinId);
-  if (existing && duplicateStrategy === "skip") return "skipped";
   if (existing) {
     if (resolveAccountKind(existing.accountKind) !== resolveAccountKind(input.accountKind)) {
       throw new AppError(409, "DOUYIN_ID_DUPLICATE", "抖音号已存在");
     }
+    if (duplicateStrategy === "skip") return "skipped";
     const id = String(existing._id);
     const { accountKind: _accountKind, ...patch } = input;
     await runImportAttempt(() => accounts.update(id, patch, context));

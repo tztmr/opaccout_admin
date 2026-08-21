@@ -92,6 +92,26 @@ describe("accounts page", () => {
     )).toBe(true);
   });
 
+  it("sets and restores the document title from the active account page config", async () => {
+    const originalTitle = document.title;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [], page: 1, pageSize: 20, total: 0, totalPages: 1,
+        stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+
+    const view = renderPage(["/accounts/email"], "email");
+    await screen.findByRole("heading", { name: "抖音邮箱号管理" });
+    expect(document.title).toBe("抖音邮箱号管理");
+
+    view.unmount();
+    expect(document.title).toBe(originalTitle);
+  });
+
   it("submits email kind and email on create without allowing kind changes on edit", async () => {
     const created: unknown[] = [];
     const updated: unknown[] = [];
@@ -144,9 +164,14 @@ describe("accounts page", () => {
     await user.click((await screen.findAllByRole("button", { name: "编辑" }))[0]!);
     const emailInput = screen.getByLabelText("邮箱");
     await user.clear(emailInput);
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("邮箱不能为空")).toBeInTheDocument();
+    expect(updated).toHaveLength(1);
+
     await user.type(emailInput, "not-an-email");
     expect(emailInput).toBeInvalid();
     await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("邮箱格式不正确")).toBeInTheDocument();
     expect(updated).toHaveLength(1);
   });
 
@@ -297,13 +322,11 @@ describe("accounts page", () => {
     await user.click(screen.getByRole("button", { name: "检测" }));
     expect(await screen.findByText(/MS4wLjABAAAA-new/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "保存" }));
-    await waitFor(() => {
-      expect(createPayloads).toContainEqual(expect.objectContaining({
-        accountPassword: "new-account-pass",
-        accountKind: "google",
-        email: ""
-      }));
-    });
+    await waitFor(() => expect(createPayloads).toContainEqual(expect.objectContaining({
+      accountPassword: "new-account-pass",
+      accountKind: "google"
+    })));
+    expect(createPayloads[0]).not.toHaveProperty("email");
     const [firstEdit] = screen.getAllByRole("button", { name: "编辑" });
     expect(firstEdit).toBeDefined();
     await user.click(firstEdit!);
@@ -314,6 +337,7 @@ describe("accounts page", () => {
       expect(editPayloads).toHaveLength(1);
     });
     expect(editPayloads[0]).not.toHaveProperty("accountPassword");
+    expect(editPayloads[0]).not.toHaveProperty("email");
 
     const [editAgain] = screen.getAllByRole("button", { name: "编辑" });
     await user.click(editAgain!);
@@ -323,6 +347,7 @@ describe("accounts page", () => {
       expect(editPayloads).toHaveLength(2);
     });
     expect(editPayloads[1]).toMatchObject({ accountPassword: "" });
+    expect(editPayloads[1]).not.toHaveProperty("email");
   });
 
   it("renders sec_uid as a Douyin profile link and opens a batch status dialog", async () => {

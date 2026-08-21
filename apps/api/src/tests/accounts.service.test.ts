@@ -142,6 +142,13 @@ describe("accounts service", () => {
       opProject: "douyin"
     });
     expect(auditWrite).toHaveBeenCalledOnce();
+    expect(auditWrite).toHaveBeenCalledWith(expect.objectContaining({
+      action: "account.created",
+      accountKind: "google"
+    }));
+    expect(auditWrite).toHaveBeenCalledWith(expect.not.objectContaining({
+      changedFields: expect.arrayContaining(["email"])
+    }));
   });
 
   it("encrypts a new account password without persisting plaintext", async () => {
@@ -199,7 +206,8 @@ describe("accounts service", () => {
     const create = vi.fn(async (value: Record<string, unknown>) =>
       accountDocument(value)
     );
-    const service = createAccountsService(dependencies({ create }));
+    const deps = dependencies({ create });
+    const service = createAccountsService(deps);
 
     const result = await service.create({
       douyinId: "94946893573",
@@ -218,6 +226,11 @@ describe("accounts service", () => {
       email: "mail@example.com"
     }));
     expect(result).toMatchObject({ accountKind: "email", email: "mail@example.com" });
+    expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "account.created",
+      accountKind: "email",
+      changedFields: expect.arrayContaining(["accountKind", "email"])
+    }));
   });
 
   it("preserves an existing account password when an update omits it", async () => {
@@ -319,21 +332,33 @@ describe("accounts service", () => {
 
   it("updates email accounts but keeps Google and historical account emails empty", async () => {
     const emailAccount = accountDocument({ accountKind: "email", email: "old@example.com" });
+    const emailDeps = dependencies({ findById: vi.fn(async () => emailAccount) });
     const emailService = createAccountsService(
-      dependencies({ findById: vi.fn(async () => emailAccount) })
+      emailDeps
     );
 
     await emailService.update(String(emailAccount._id), { email: "new@example.com" }, context);
     expect(emailAccount.email).toBe("new@example.com");
+    expect(emailDeps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "account.updated",
+      accountKind: "email",
+      changedFields: expect.arrayContaining(["email"])
+    }));
 
     for (const accountKind of [undefined, "google"] as const) {
       const account = accountDocument({ accountKind, email: "stale@example.com" });
+      const deps = dependencies({ findById: vi.fn(async () => account) });
       const service = createAccountsService(
-        dependencies({ findById: vi.fn(async () => account) })
+        deps
       );
 
       await service.update(String(account._id), { email: "other@example.com" }, context);
       expect(account.email).toBe("");
+      expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
+        action: "account.updated",
+        accountKind: "google",
+        changedFields: expect.not.arrayContaining(["email"])
+      }));
     }
   });
 

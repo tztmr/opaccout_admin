@@ -526,6 +526,122 @@ describe("imports page", () => {
     expect(screen.queryByText("旧导入失败")).not.toBeInTheDocument();
   });
 
+  it("ignores an old date-override success after navigation changes the account kind", async () => {
+    const overrideResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/accounts/batch-override-dates") return overrideResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const textarea = await screen.findByRole("textbox", { name: "粘贴导入内容" });
+    const pasteForm = screen.getByText("文本快捷导入").closest("form")!;
+    await user.type(textarea, "94946893573----2026-07-27");
+    await user.click(within(pasteForm).getByRole("button", { name: "解析并预览" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/accounts/batch-override-dates",
+      expect.objectContaining({ method: "POST" })
+    ));
+
+    await user.click(screen.getByRole("button", { name: "外部打开谷歌导入" }));
+    await user.type(textarea, "new paste after navigation");
+    await act(async () => {
+      overrideResponse.resolve(json({ matched: 1, updated: 1 }));
+      await Promise.resolve();
+    });
+
+    expect(textarea).toHaveValue("new paste after navigation");
+    expect(screen.queryByText(/时间覆盖完成/)).not.toBeInTheDocument();
+  });
+
+  it("ignores an old date-override failure after a new upload starts", async () => {
+    const overrideResponse = deferred<Response>();
+    const previewResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/accounts/batch-override-dates") return overrideResponse.promise;
+      if (path === "/api/imports/preview") return previewResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const textarea = await screen.findByRole("textbox", { name: "粘贴导入内容" });
+    const pasteForm = screen.getByText("文本快捷导入").closest("form")!;
+    await user.type(textarea, "94946893573----2026-07-27");
+    await user.click(within(pasteForm).getByRole("button", { name: "解析并预览" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/accounts/batch-override-dates",
+      expect.objectContaining({ method: "POST" })
+    ));
+
+    const uploadCard = screen.getByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["new"], "new-import.csv", { type: "text/csv" })] }
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/imports/preview",
+      expect.objectContaining({ method: "POST" })
+    ));
+    await user.type(textarea, "new paste after upload");
+    await act(async () => {
+      overrideResponse.reject(new Error("旧时间覆盖失败"));
+      await Promise.resolve();
+    });
+
+    expect(textarea).toHaveValue("94946893573----2026-07-27new paste after upload");
+    expect(screen.queryByText("旧时间覆盖失败")).not.toBeInTheDocument();
+  });
+
+  it("keeps only the latest same-kind date override result", async () => {
+    const firstResponse = deferred<Response>();
+    const secondResponse = deferred<Response>();
+    let overrideCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/accounts/batch-override-dates") {
+        overrideCalls += 1;
+        return overrideCalls === 1 ? firstResponse.promise : secondResponse.promise;
+      }
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const textarea = await screen.findByRole("textbox", { name: "粘贴导入内容" });
+    const pasteForm = screen.getByText("文本快捷导入").closest("form")!;
+    await user.type(textarea, "94946893573----2026-07-27");
+    await user.click(within(pasteForm).getByRole("button", { name: "解析并预览" }));
+    await user.clear(textarea);
+    await user.type(textarea, "93180119509----2026-07-28");
+    await user.click(within(pasteForm).getByRole("button", { name: "解析并预览" }));
+    await waitFor(() => expect(overrideCalls).toBe(2));
+
+    await act(async () => {
+      secondResponse.resolve(json({ matched: 2, updated: 2 }));
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("时间覆盖完成：匹配到 2 个账号，成功更新 2 个")).toBeInTheDocument();
+    await user.type(textarea, "fresh paste");
+
+    await act(async () => {
+      firstResponse.resolve(json({ matched: 1, updated: 1 }));
+      await Promise.resolve();
+    });
+
+    expect(textarea).toHaveValue("fresh paste");
+    expect(screen.getByText("时间覆盖完成：匹配到 2 个账号，成功更新 2 个")).toBeInTheDocument();
+    expect(screen.queryByText("时间覆盖完成：匹配到 1 个账号，成功更新 1 个")).not.toBeInTheDocument();
+  });
+
   it("labels historical import jobs without a kind as Google accounts", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === "/api/imports") {

@@ -80,6 +80,7 @@ export function ImportsPage() {
   const [pasteText, setPasteText] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
   const previewRequestVersion = useRef(0);
+  const operationVersion = useRef(0);
   const currentPreview = useRef<Preview | null>(null);
   const accountKindVersion = useRef(0);
   const previousAccountKind = useRef(accountKind);
@@ -94,6 +95,7 @@ export function ImportsPage() {
       accountKind: AccountKind;
       accountKindVersion: number;
       requestVersion: number;
+      operationVersion: number;
     }) => {
       const form = new FormData();
       form.append("file", file);
@@ -103,7 +105,8 @@ export function ImportsPage() {
     onSuccess: (value, variables) => {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
-        variables.requestVersion === previewRequestVersion.current
+        variables.requestVersion === previewRequestVersion.current &&
+        variables.operationVersion === operationVersion.current
       ) {
         currentPreview.current = value;
         setPreview(value);
@@ -113,7 +116,8 @@ export function ImportsPage() {
     onError: (error, variables) => {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
-        variables.requestVersion === previewRequestVersion.current
+        variables.requestVersion === previewRequestVersion.current &&
+        variables.operationVersion === operationVersion.current
       ) {
         setNotice(error instanceof Error ? error.message : "文件解析失败");
       }
@@ -125,6 +129,7 @@ export function ImportsPage() {
       duplicateStrategy: "skip" | "update";
       accountKindVersion: number;
       previewRequestVersion: number;
+      operationVersion: number;
     }) => api<{ jobId: string }>("/api/imports/execute", {
       method: "POST",
       body: JSON.stringify({ previewId, duplicateStrategy })
@@ -133,6 +138,7 @@ export function ImportsPage() {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
         variables.previewRequestVersion === previewRequestVersion.current &&
+        variables.operationVersion === operationVersion.current &&
         currentPreview.current?.previewId === variables.previewId
       ) {
         currentPreview.current = null;
@@ -145,6 +151,7 @@ export function ImportsPage() {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
         variables.previewRequestVersion === previewRequestVersion.current &&
+        variables.operationVersion === operationVersion.current &&
         currentPreview.current?.previewId === variables.previewId
       ) {
         setNotice(error instanceof Error ? error.message : "提交导入失败");
@@ -157,11 +164,13 @@ export function ImportsPage() {
       setPreview(null);
       setNotice("");
       execute.reset();
+      const nextOperationVersion = ++operationVersion.current;
       upload.mutate({
         file,
         accountKind,
         accountKindVersion: accountKindVersion.current,
-        requestVersion: ++previewRequestVersion.current
+        requestVersion: ++previewRequestVersion.current,
+        operationVersion: nextOperationVersion
       });
     }
   };
@@ -175,6 +184,7 @@ export function ImportsPage() {
     previousAccountKind.current = accountKind;
     accountKindVersion.current += 1;
     previewRequestVersion.current += 1;
+    operationVersion.current += 1;
     currentPreview.current = null;
     setPreview(null);
     setPasteText("");
@@ -226,13 +236,23 @@ export function ImportsPage() {
         return { douyinId: douyinId ?? "", registeredAt: rawDate ?? "" };
       });
       // We will need backend to parse the raw date.
+      const submittedAccountKindVersion = accountKindVersion.current;
+      const submittedOperationVersion = ++operationVersion.current;
       api<{ matched: number; updated: number }>("/api/accounts/batch-override-dates", {
         method: "POST",
         body: JSON.stringify({ items })
       }).then(res => {
+        if (
+          submittedAccountKindVersion !== accountKindVersion.current ||
+          submittedOperationVersion !== operationVersion.current
+        ) return;
         setNotice(`时间覆盖完成：匹配到 ${res.matched} 个账号，成功更新 ${res.updated} 个`);
         setPasteText("");
       }).catch(err => {
+        if (
+          submittedAccountKindVersion !== accountKindVersion.current ||
+          submittedOperationVersion !== operationVersion.current
+        ) return;
         setNotice(err instanceof Error ? err.message : "时间覆盖失败");
       });
       return;
@@ -293,7 +313,7 @@ export function ImportsPage() {
     {preview && <div className="panel preview-panel">
       <div className="panel-head"><div><h2>导入预览</h2><p>{accountKindLabels[accountKind]} · 共 {preview.totalRows} 行，可导入 {preview.validRows} 行，错误 {preview.errors.length} 行</p></div></div>
       {preview.errors.length > 0 && <div className="error-list"><AlertTriangle size={18}/><div>{preview.errors.slice(0, 8).map((item) => <p key={`${item.row}-${item.field}-${item.message}`}>第 {item.row} 行{item.field ? ` · ${item.field}` : ""}：{item.message}</p>)}</div></div>}
-      <div className="preview-options"><label><input type="radio" checked={strategy==="skip"} onChange={()=>setStrategy("skip")}/>重复抖音号跳过</label><label><input type="radio" checked={strategy==="update"} onChange={()=>setStrategy("update")}/>重复抖音号更新</label><button className="primary" disabled={!preview.validRows||execute.isPending} onClick={()=>execute.mutate({ previewId: preview.previewId, duplicateStrategy: strategy, accountKindVersion: accountKindVersion.current, previewRequestVersion: previewRequestVersion.current })}>{execute.isPending ? "提交中…" : `确认导入 ${preview.validRows} 行`}</button></div>
+      <div className="preview-options"><label><input type="radio" checked={strategy==="skip"} onChange={()=>setStrategy("skip")}/>重复抖音号跳过</label><label><input type="radio" checked={strategy==="update"} onChange={()=>setStrategy("update")}/>重复抖音号更新</label><button className="primary" disabled={!preview.validRows||execute.isPending} onClick={()=>execute.mutate({ previewId: preview.previewId, duplicateStrategy: strategy, accountKindVersion: accountKindVersion.current, previewRequestVersion: previewRequestVersion.current, operationVersion: operationVersion.current })}>{execute.isPending ? "提交中…" : `确认导入 ${preview.validRows} 行`}</button></div>
     </div>}
     <div className="panel">
       <div className="panel-head"><div><h2>历史任务</h2><p>最近 100 次导入</p></div></div>
