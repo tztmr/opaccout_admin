@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Plus, RefreshCw, Search, Trash2, Upload, X } from "lucide-react";
-import { isValidElement, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { isValidElement, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { Link, useSearchParams } from "react-router-dom";
 import type { AccountColumnId, AccountDto, AccountKind, AccountStats, PagedResponse } from "@douyin-admin/shared";
@@ -175,6 +175,7 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
   const [columnOrderOpen, setColumnOrderOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [progressText, setProgressText] = useState("");
+  const columnOrderMutationPending = useRef(false);
   useEffect(() => {
     const previousTitle = document.title;
     document.title = config.title;
@@ -248,7 +249,8 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
   });
   const columnOrdersQuery = useQuery({
     queryKey: ["account-column-orders"],
-    queryFn: ({ signal }) => api<AccountColumnOrders>("/api/settings/account-columns", { signal })
+    queryFn: ({ signal }) => api<AccountColumnOrders>("/api/settings/account-columns", { signal }),
+    enabled: () => !columnOrderMutationPending.current
   });
   const activeColumnOrder = useMemo(
     () => normalizeAccountColumnOrder(accountKind, columnOrdersQuery.data?.[accountKind]),
@@ -274,14 +276,16 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
   });
   const saveColumnOrder = useMutation({
     onMutate: async () => {
+      columnOrderMutationPending.current = true;
       await client.cancelQueries({ queryKey: ["account-column-orders"] });
     },
     mutationFn: (order: AccountColumnId[]) => api<{ order: AccountColumnId[] }>(
       `/api/settings/account-columns/${accountKind}`,
       { method: "PATCH", body: JSON.stringify({ order }) }
     ),
-    onSuccess: (value) => {
+    onSuccess: async (value) => {
       const normalized = normalizeAccountColumnOrder(accountKind, value.order);
+      await client.cancelQueries({ queryKey: ["account-column-orders"] });
       client.setQueryData<AccountColumnOrders>(["account-column-orders"], (current) => ({
         google: current?.google ?? [...DEFAULT_ACCOUNT_COLUMN_ORDER.google],
         email: current?.email ?? [...DEFAULT_ACCOUNT_COLUMN_ORDER.email],
@@ -291,6 +295,9 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
       setMessage("表头顺序已保存");
     }
   });
+  useEffect(() => {
+    if (!saveColumnOrder.isPending) columnOrderMutationPending.current = false;
+  }, [saveColumnOrder.isPending]);
   const remove = async(id:string)=>{if(!confirm("确定删除这条账号吗？"))return;await api(`/api/accounts/${id}`,{method:"DELETE"});void client.invalidateQueries({queryKey:["accounts", accountKind]});void client.invalidateQueries({queryKey:["account-owners", accountKind]})};
   const reveal = async(id:string)=>{const value=await api<{opSecret:string}>(`/api/accounts/${id}/reveal-secret`,{method:"POST"});await navigator.clipboard.writeText(value.opSecret);setMessage("OP卡密已复制，页面仍保持隐藏")};
   const recheck = async(id:string)=>{await runWithProgress("正在重新检测抖音账号…", async()=>{await api(`/api/accounts/${id}/recheck`,{method:"POST"});setMessage("检测完成");void client.invalidateQueries({queryKey:["accounts", accountKind]})})};

@@ -478,6 +478,68 @@ describe("accounts page", () => {
     expect(screen.getAllByRole("columnheader")[2]).toHaveTextContent("手机号");
   });
 
+  it("cancels a settings GET started after PATCH is pending before caching the saved order", async () => {
+    const saveResponse = deferred<Response>();
+    const staleSettings = deferred<Response>();
+    const lateGetSignals: AbortSignal[] = [];
+    let patchPending = false;
+    const savedOrder = [
+      "mobile", "douyin", "email", "password", "secuid", "date", "opname",
+      "opsecret", "shortop", "project", "expiry", "owner", "region", "sale", "status", "remark"
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") {
+        if (!patchPending) return json(accountColumnOrders);
+        if (init?.signal) lateGetSignals.push(init.signal);
+        return staleSettings.promise;
+      }
+      if (path === "/api/settings/account-columns/email") {
+        patchPending = true;
+        return saveResponse.promise;
+      }
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [], page: 1, pageSize: 20, total: 0, totalPages: 1,
+        stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+    const user = userEvent.setup();
+    const view = renderPage(["/accounts/email"], "email");
+    const settingsButton = await screen.findByRole("button", { name: "表头设置" });
+    await waitFor(() => expect(settingsButton).toBeEnabled());
+
+    await user.click(settingsButton);
+    fireEvent.dragStart(screen.getByRole("listitem", { name: "手机号" }));
+    fireEvent.drop(screen.getByRole("listitem", { name: "抖音号" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("button", { name: "保存中…" })).toBeDisabled();
+    expect(patchPending).toBe(true);
+
+    const lateGet = view.client.fetchQuery({
+      queryKey: ["account-column-orders"],
+      queryFn: async ({ signal }) => {
+        const response = await fetch("/api/settings/account-columns", { signal });
+        return response.json();
+      }
+    }).catch((error: unknown) => error);
+    await waitFor(() => expect(lateGetSignals).toHaveLength(1));
+
+    saveResponse.resolve(json({ order: savedOrder }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "表头设置" })).not.toBeInTheDocument());
+    expect(lateGetSignals[0]?.aborted).toBe(true);
+    expect(screen.getAllByRole("columnheader")[2]).toHaveTextContent("手机号");
+
+    staleSettings.resolve(json(accountColumnOrders));
+    await lateGet;
+    expect(view.client.getQueryData(["account-column-orders"])).toEqual({
+      ...accountColumnOrders,
+      email: savedOrder
+    });
+    expect(screen.getAllByRole("columnheader")[2]).toHaveTextContent("手机号");
+  });
+
   it("never sends a client column order in the export request", async () => {
     let exportPayload: Record<string, unknown> | undefined;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

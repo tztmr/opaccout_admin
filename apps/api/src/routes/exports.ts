@@ -113,7 +113,7 @@ export function createExportsRouter(
     };
     await audit.write({
       action: "account.exported", targetType: "account",
-      targetIds: ids,
+      targetIds: accounts.map((account) => String(account._id)),
       changedFields: buildAccountExportColumns(accountKind, columnOrder, cipher)
         .map((column) => column.id),
       accountKind, count: accounts.length, ...context
