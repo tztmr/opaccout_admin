@@ -1,4 +1,4 @@
-import type { AccountInput } from "@douyin-admin/shared";
+import { AccountPatchSchema, type AccountInput } from "@douyin-admin/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AccountModel } from "../models/account";
 import { ImportJobModel } from "../models/import-job";
@@ -92,6 +92,35 @@ describe("processImportRow", () => {
     );
     expect(accounts.recheck).toHaveBeenCalledWith("existing-id", context);
     expect(accounts.recheckOp).toHaveBeenCalledWith("existing-id", context);
+    expect(accounts.create).not.toHaveBeenCalled();
+  });
+
+  it("updates a same-kind email row through the strict account patch schema", async () => {
+    const accounts = accountServiceStub();
+    const emailInput: AccountInput = {
+      ...input,
+      accountKind: "email",
+      email: "mail@example.com"
+    };
+    vi.mocked(accounts.update).mockImplementation(async (_id, rawPatch) => {
+      AccountPatchSchema.parse(rawPatch);
+      return { _id: "updated-id", opName: "" } as never;
+    });
+
+    const result = await processImportRow(
+      accounts,
+      emailInput,
+      "update",
+      context,
+      vi.fn(async () => ({ _id: "email-id", accountKind: "email" as const }))
+    );
+
+    expect(result).toBe("updated");
+    expect(accounts.update).toHaveBeenCalledWith(
+      "email-id",
+      expect.objectContaining({ email: "mail@example.com" }),
+      context
+    );
     expect(accounts.create).not.toHaveBeenCalled();
   });
 

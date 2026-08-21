@@ -109,7 +109,8 @@ export async function processImportRow(
       throw new AppError(409, "DOUYIN_ID_DUPLICATE", "抖音号已存在");
     }
     const id = String(existing._id);
-    await runImportAttempt(() => accounts.update(id, input, context));
+    const { accountKind: _accountKind, ...patch } = input;
+    await runImportAttempt(() => accounts.update(id, patch, context));
     const rechecked = await runImportAttempt(() => accounts.recheck(id, context));
     if (rechecked.accountStatus === "banned") {
       await ensureImportedOpName(accounts, id, rechecked.opName, context);
