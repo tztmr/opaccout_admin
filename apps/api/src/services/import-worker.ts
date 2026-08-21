@@ -1,4 +1,4 @@
-import type { AccountInput } from "@douyin-admin/shared";
+import type { AccountInput, AccountKind } from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
 import { ImportJobModel, type ImportRowFailure } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
@@ -6,6 +6,7 @@ import { AppError } from "../middleware/errors";
 import type { AccountsService, AuditContext } from "./accounts";
 import { DouyinCheckError } from "./douyin-check";
 import type { EncryptedValue, SecretCipher } from "./encryption";
+import { resolveAccountKind } from "./account-kind";
 
 type StagedRow = Omit<AccountInput, "opSecret" | "accountPassword"> & {
   opSecret: EncryptedValue;
@@ -98,12 +99,15 @@ export async function processImportRow(
   context: AuditContext,
   findExisting: (
     douyinId: string
-  ) => Promise<{ _id: unknown } | null> = async (douyinId) =>
-    AccountModel.findOne({ douyinId }).select("_id").lean()
+  ) => Promise<{ _id: unknown; accountKind?: AccountKind } | null> = async (douyinId) =>
+    AccountModel.findOne({ douyinId }).select("_id accountKind").lean()
 ): Promise<ImportRowOutcome> {
   const existing = await findExisting(input.douyinId);
   if (existing && duplicateStrategy === "skip") return "skipped";
   if (existing) {
+    if (resolveAccountKind(existing.accountKind) !== resolveAccountKind(input.accountKind)) {
+      throw new AppError(409, "DOUYIN_ID_DUPLICATE", "抖音号已存在");
+    }
     const id = String(existing._id);
     await runImportAttempt(() => accounts.update(id, input, context));
     const rechecked = await runImportAttempt(() => accounts.recheck(id, context));
@@ -142,11 +146,14 @@ export async function processNextImportJob(
   const context = { ip: "system", userAgent: "import-worker", requestId: `import-${job.id}` };
   const failures: ImportRowFailure[] = [];
   const stagedRows = preview.stagedRows as StagedRow[];
+  const accountKind = preview.accountKind ?? job.accountKind ?? "google";
   for (let index = 0; index < stagedRows.length; index += 1) {
     const raw = stagedRows[index]!;
     const rowNumber = index + 2;
     const input: AccountInput = {
       ...raw,
+      accountKind,
+      email: accountKind === "email" ? raw.email ?? "" : "",
       opSecret: cipher.decrypt(raw.opSecret),
       accountPassword: typeof raw.accountPassword === "string"
         ? raw.accountPassword

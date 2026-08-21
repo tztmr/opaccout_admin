@@ -95,6 +95,24 @@ describe("processImportRow", () => {
     expect(accounts.create).not.toHaveBeenCalled();
   });
 
+  it("rejects cross-kind duplicate updates without writing", async () => {
+    const accounts = accountServiceStub();
+    const emailInput: AccountInput = {
+      ...input,
+      accountKind: "email",
+      email: "mail@example.com"
+    };
+
+    await expect(processImportRow(
+      accounts,
+      emailInput,
+      "update",
+      context,
+      vi.fn(async () => ({ _id: "google-id", accountKind: "google" as const }))
+    )).rejects.toMatchObject({ code: "DOUYIN_ID_DUPLICATE" });
+    expect(accounts.update).not.toHaveBeenCalled();
+  });
+
   it("does not OP recheck an imported existing account detected as banned", async () => {
     const accounts = accountServiceStub();
     vi.mocked(accounts.recheck).mockResolvedValueOnce({
@@ -253,6 +271,76 @@ describe("processNextImportJob", () => {
     expect(accounts.create).toHaveBeenCalledWith(
       expect.objectContaining({ accountPassword: "import-pass" }),
       expect.objectContaining({ userAgent: "import-worker" })
+    );
+  });
+
+  it("uses the preview kind for legacy staged rows without a kind", async () => {
+    const job = {
+      id: "job-id",
+      previewId: "preview-id",
+      accountKind: "google",
+      duplicateStrategy: "skip" as const,
+      status: "running" as const,
+      processed: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      save: vi.fn(async () => undefined),
+      set: vi.fn()
+    };
+    vi.spyOn(ImportJobModel, "findOneAndUpdate").mockResolvedValue(job as never);
+    vi.spyOn(ImportPreviewModel, "findById").mockResolvedValue({
+      _id: "preview-id",
+      accountKind: "email",
+      stagedRows: [{ ...input, accountKind: undefined, email: undefined }]
+    } as never);
+    vi.spyOn(ImportPreviewModel, "findByIdAndDelete").mockResolvedValue(null);
+    vi.spyOn(AccountModel, "findOne").mockReturnValue({
+      select: () => ({ lean: async () => null })
+    } as never);
+    const accounts = accountServiceStub();
+    const cipher = { encrypt: vi.fn(), decrypt: vi.fn(() => "openid|token|pay|pfkey|1782303418") };
+
+    await processNextImportJob(accounts, cipher);
+
+    expect(accounts.create).toHaveBeenCalledWith(
+      expect.objectContaining({ accountKind: "email", email: "" }),
+      expect.anything()
+    );
+  });
+
+  it("defaults legacy previews and jobs without a kind to Google", async () => {
+    const job = {
+      id: "job-id",
+      previewId: "preview-id",
+      duplicateStrategy: "skip" as const,
+      status: "running" as const,
+      processed: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      save: vi.fn(async () => undefined),
+      set: vi.fn()
+    };
+    vi.spyOn(ImportJobModel, "findOneAndUpdate").mockResolvedValue(job as never);
+    vi.spyOn(ImportPreviewModel, "findById").mockResolvedValue({
+      _id: "preview-id",
+      stagedRows: [{ ...input, accountKind: undefined, email: undefined }]
+    } as never);
+    vi.spyOn(ImportPreviewModel, "findByIdAndDelete").mockResolvedValue(null);
+    vi.spyOn(AccountModel, "findOne").mockReturnValue({
+      select: () => ({ lean: async () => null })
+    } as never);
+    const accounts = accountServiceStub();
+    const cipher = { encrypt: vi.fn(), decrypt: vi.fn(() => "openid|token|pay|pfkey|1782303418") };
+
+    await processNextImportJob(accounts, cipher);
+
+    expect(accounts.create).toHaveBeenCalledWith(
+      expect.objectContaining({ accountKind: "google", email: "" }),
+      expect.anything()
     );
   });
 });

@@ -12,6 +12,77 @@ function workbookBuffer(
 }
 
 describe("parseImport", () => {
+  it("imports email account fields from CSV", () => {
+    const csv = [
+      "抖音号,邮箱,密码,注册时间,OP卡密,归属人",
+      "94946893573,mail@example.com,douyin-pass,2026-07-27,a|b|1782303418,小王"
+    ].join("\n");
+
+    const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv", "email");
+
+    expect(result.rows[0]).toMatchObject({
+      accountKind: "email",
+      email: "mail@example.com",
+      accountPassword: "douyin-pass"
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it.each(["xls", "xlsx"] as const)("imports email account fields from %s", (bookType) => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      邮箱: "mail@example.com",
+      密码: "douyin-pass",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }], bookType), `accounts.${bookType}`, "email");
+
+    expect(result.rows[0]).toMatchObject({
+      accountKind: "email",
+      email: "mail@example.com",
+      accountPassword: "douyin-pass"
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it("reports missing and malformed email values against email", () => {
+    const result = parseImport(workbookBuffer([
+      {
+        抖音号: "94946893573",
+        邮箱: "",
+        注册时间: "2026-07-27",
+        OP卡密: "a|b|1782303418",
+        归属人: "小王"
+      },
+      {
+        抖音号: "94946893574",
+        邮箱: "not-an-email",
+        注册时间: "2026-07-27",
+        OP卡密: "a|b|1782303418",
+        归属人: "小王"
+      }
+    ]), "accounts.xlsx", "email");
+
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.objectContaining({ row: 2, field: "email", code: "VALIDATION_FAILED" }),
+      expect.objectContaining({ row: 3, field: "email", code: "VALIDATION_FAILED" })
+    ]);
+  });
+
+  it("defaults legacy imports without a kind to Google rows", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      邮箱: "mail@example.com",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]).toMatchObject({ accountKind: "google", email: "" });
+  });
+
   it("imports the optional 密码 column", () => {
     const result = parseImport(workbookBuffer([{
       抖音号: "94946893573",

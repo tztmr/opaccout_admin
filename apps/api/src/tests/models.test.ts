@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ACCOUNT_KINDS } from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
+import { ImportJobModel } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
 
 describe("Account model", () => {
@@ -135,5 +136,36 @@ describe("ImportPreview model", () => {
       .find(([keys]) => keys.expiresAt === 1);
 
     expect(ttlIndex?.[1].expireAfterSeconds).toBe(0);
+  });
+
+  it("defaults historical preview records to the Google account kind", async () => {
+    const preview = new ImportPreviewModel({
+      fileName: "accounts.csv",
+      fileType: "csv",
+      ownerSessionId: "session-id",
+      stagedRows: [],
+      rowErrors: [],
+      totalRows: 0,
+      validRows: 0,
+      expiresAt: new Date("2026-08-21T00:00:00.000Z")
+    });
+
+    await expect(preview.validate()).resolves.toBeUndefined();
+    expect(preview.accountKind).toBe("google");
+  });
+});
+
+describe("ImportJob model", () => {
+  it("defaults historical jobs to the Google account kind", async () => {
+    const job = new ImportJobModel({
+      previewId: "preview-id",
+      fileName: "accounts.csv",
+      duplicateStrategy: "skip",
+      status: "queued",
+      total: 0
+    });
+
+    await expect(job.validate()).resolves.toBeUndefined();
+    expect(job.accountKind).toBe("google");
   });
 });

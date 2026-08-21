@@ -2,6 +2,7 @@ import {
   AccountInputSchema,
   DEFAULT_OP_PROJECT,
   DEFAULT_REGISTERED_REGION,
+  type AccountKind,
   type AccountInput,
   type SaleStatus
 } from "@douyin-admin/shared";
@@ -134,7 +135,11 @@ function shanghaiDate(value: Date): string {
   }).format(value);
 }
 
-export function parseImport(buffer: Buffer, fileName: string): ImportParseResult {
+export function parseImport(
+  buffer: Buffer,
+  fileName: string,
+  accountKind: AccountKind = "google"
+): ImportParseResult {
   const extension = fileName.toLocaleLowerCase().split(".").pop();
   if (!extension || !["xlsx", "xls", "csv"].includes(extension)) {
     throw new Error("IMPORT_FILE_TYPE_UNSUPPORTED");
@@ -168,6 +173,10 @@ export function parseImport(buffer: Buffer, fileName: string): ImportParseResult
     const saleStatusLabel = String(source["售卖状态"] ?? "").trim();
     const projectLabel = String(source["项目"] ?? "").trim();
     const candidate = {
+      accountKind,
+      email: accountKind === "email"
+        ? String(pickValue(source, "邮箱", "email", "Email")).trim()
+        : "",
       douyinId,
       accountPassword: String(source["密码"] ?? "").trim(),
       registeredAt: normalizedDate(pickValue(source, "注册时间", "时间")),
