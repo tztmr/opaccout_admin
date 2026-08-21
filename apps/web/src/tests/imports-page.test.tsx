@@ -428,6 +428,104 @@ describe("imports page", () => {
     expect(screen.queryByText("旧导入失败")).not.toBeInTheDocument();
   });
 
+  it("removes the submitted preview when its replacement preview fails before the old execute succeeds", async () => {
+    const executeResponse = deferred<Response>();
+    const replacementPreview = deferred<Response>();
+    let previewCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") {
+        previewCalls += 1;
+        if (previewCalls === 1) {
+          return Promise.resolve(json({ previewId: "email-preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
+        }
+        return replacementPreview.promise;
+      }
+      if (path === "/api/imports/execute") return executeResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const uploadCard = await screen.findByText("上传账号文件");
+    const uploadForm = uploadCard.closest("form") ?? uploadCard;
+    fireEvent.drop(uploadForm, { dataTransfer: { files: [new File(["a"], "email-a.csv", { type: "text/csv" })] } });
+    await user.click(await screen.findByRole("button", { name: "确认导入 1 行" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/imports/execute",
+      expect.objectContaining({ method: "POST" })
+    ));
+
+    fireEvent.drop(uploadForm, { dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] } });
+    await waitFor(() => expect(previewCalls).toBe(2));
+    await act(async () => {
+      replacementPreview.resolve(json({ error: { code: "IMPORT_PARSE_FAILED", message: "B解析失败" }, requestId: "test" }, 500));
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("B解析失败")).toBeInTheDocument();
+
+    await act(async () => {
+      executeResponse.resolve(json({ jobId: "email-job-a" }, 202));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /确认导入/ })).not.toBeInTheDocument();
+    expect(screen.getByText("B解析失败")).toBeInTheDocument();
+    expect(screen.queryByText("导入任务已提交，将在后台继续处理")).not.toBeInTheDocument();
+  });
+
+  it("removes the submitted preview when its replacement preview fails before the old execute errors", async () => {
+    const executeResponse = deferred<Response>();
+    const replacementPreview = deferred<Response>();
+    let previewCalls = 0;
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") {
+        previewCalls += 1;
+        if (previewCalls === 1) {
+          return Promise.resolve(json({ previewId: "email-preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
+        }
+        return replacementPreview.promise;
+      }
+      if (path === "/api/imports/execute") return executeResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const uploadCard = await screen.findByText("上传账号文件");
+    const uploadForm = uploadCard.closest("form") ?? uploadCard;
+    fireEvent.drop(uploadForm, { dataTransfer: { files: [new File(["a"], "email-a.csv", { type: "text/csv" })] } });
+    await user.click(await screen.findByRole("button", { name: "确认导入 1 行" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/imports/execute",
+      expect.objectContaining({ method: "POST" })
+    ));
+
+    fireEvent.drop(uploadForm, { dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] } });
+    await waitFor(() => expect(previewCalls).toBe(2));
+    await act(async () => {
+      replacementPreview.resolve(json({ error: { code: "IMPORT_PARSE_FAILED", message: "B解析失败" }, requestId: "test" }, 500));
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("B解析失败")).toBeInTheDocument();
+
+    await act(async () => {
+      executeResponse.reject(new Error("旧导入失败"));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /确认导入/ })).not.toBeInTheDocument();
+    expect(screen.getByText("B解析失败")).toBeInTheDocument();
+    expect(screen.queryByText("旧导入失败")).not.toBeInTheDocument();
+  });
+
   it("labels historical import jobs without a kind as Google accounts", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       if (String(input) === "/api/imports") {

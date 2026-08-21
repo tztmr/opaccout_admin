@@ -153,6 +153,10 @@ export function ImportsPage() {
   });
   const handleFile = (file: File | null | undefined) => {
     if (file instanceof File && file.size) {
+      currentPreview.current = null;
+      setPreview(null);
+      setNotice("");
+      execute.reset();
       upload.mutate({
         file,
         accountKind,
