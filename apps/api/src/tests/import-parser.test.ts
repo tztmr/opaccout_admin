@@ -14,8 +14,8 @@ function workbookBuffer(
 describe("parseImport", () => {
   it("imports email account fields from CSV", () => {
     const csv = [
-      "抖音号,邮箱,密码,注册时间,OP卡密,归属人",
-      "94946893573,mail@example.com,douyin-pass,2026-07-27,a|b|1782303418,小王"
+      "抖音号,邮箱,手机号,密码,注册时间,OP卡密,归属人",
+      "94946893573,mail@example.com, +852   65478974 ,douyin-pass,2026-07-27,a|b|1782303418,小王"
     ].join("\n");
 
     const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv", "email");
@@ -23,6 +23,7 @@ describe("parseImport", () => {
     expect(result.rows[0]).toMatchObject({
       accountKind: "email",
       email: "mail@example.com",
+      mobile: "+852 65478974",
       accountPassword: "douyin-pass"
     });
     expect(result.errors).toEqual([]);
@@ -44,6 +45,34 @@ describe("parseImport", () => {
       accountPassword: "douyin-pass"
     });
     expect(result.errors).toEqual([]);
+  });
+
+  it("imports a Google mobile number from an XLSX 手机号 header", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      手机号: " +852   65478974 ",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx", "google");
+
+    expect(result.rows[0]?.mobile).toBe("+852 65478974");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("reports an invalid 手机号 as a mobile validation error", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      手机号: "852-65478974",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx", "google");
+
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.objectContaining({ field: "mobile", code: "VALIDATION_FAILED" })
+    ]);
   });
 
   it("reports missing and malformed email values against email", () => {

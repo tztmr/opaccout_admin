@@ -99,6 +99,7 @@ function toDto(
     douyinId: value.douyinId,
     accountKind: resolveAccountKind(value.accountKind),
     email: value.email ?? "",
+    mobile: value.mobile ?? "",
     secUid: value.secUid,
     registeredAt: value.registeredAt.toISOString(),
     opName: value.opName,

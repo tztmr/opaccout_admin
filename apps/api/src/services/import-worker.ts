@@ -155,6 +155,7 @@ export async function processNextImportJob(
       ...raw,
       accountKind,
       email: accountKind === "email" ? raw.email ?? "" : "",
+      mobile: raw.mobile ?? "",
       opSecret: cipher.decrypt(raw.opSecret),
       accountPassword: typeof raw.accountPassword === "string"
         ? raw.accountPassword

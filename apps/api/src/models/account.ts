@@ -16,6 +16,7 @@ export type AccountRecord = {
   douyinId: string;
   accountKind?: AccountKind;
   email?: string;
+  mobile?: string;
   secUid: string;
   registeredAt: Date;
   opName: string;
@@ -52,6 +53,7 @@ const AccountSchema = new Schema<AccountRecord>(
     douyinId: { type: String, required: true, trim: true },
     accountKind: { type: String, required: false, enum: ACCOUNT_KINDS },
     email: { type: String, required: false, trim: true, maxlength: 254, default: "" },
+    mobile: { type: String, required: false, trim: true, maxlength: 32, default: "" },
     secUid: { type: String, required: false, trim: true, default: "" },
     registeredAt: { type: Date, required: true },
     opName: { type: String, default: "", trim: true, maxlength: 100 },
@@ -105,6 +107,7 @@ AccountSchema.pre("validate", function buildSearchText() {
   this.searchText = [
     this.douyinId,
     this.email,
+    this.mobile,
     this.secUid,
     this.opName,
     this.shortOpCode,

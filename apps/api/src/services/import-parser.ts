@@ -177,6 +177,7 @@ export function parseImport(
       email: accountKind === "email"
         ? String(pickValue(source, "邮箱", "email", "Email")).trim()
         : "",
+      mobile: String(pickValue(source, "手机号", "mobile", "Mobile")).trim(),
       douyinId,
       accountPassword: String(source["密码"] ?? "").trim(),
       registeredAt: normalizedDate(pickValue(source, "注册时间", "时间")),

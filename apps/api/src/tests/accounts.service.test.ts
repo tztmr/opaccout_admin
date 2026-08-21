@@ -120,6 +120,7 @@ describe("accounts service", () => {
       registeredAt: "2026-07-27",
       opName: "",
       opSecret: "a|b|1782303418",
+      mobile: " +86 13037174892 ",
       owner: "小王",
       registeredRegion: "中国.澳门",
       saleStatus: "unsold",
@@ -133,13 +134,15 @@ describe("accounts service", () => {
       registeredRegion: "中国.澳门",
       accountStatus: "normal",
       opExpiresAt: new Date("2026-09-22T12:16:58.000Z"),
+      mobile: "+86 13037174892",
       opSecret: expect.objectContaining({ ciphertext: "Y2lwaGVy" })
     }));
     expect(result).not.toHaveProperty("opSecret");
     expect(result.registeredRegion).toBe("中国.澳门");
     expect(result).toMatchObject({
       shortOpCode: "123456789",
-      opProject: "douyin"
+      opProject: "douyin",
+      mobile: "+86 13037174892"
     });
     expect(auditWrite).toHaveBeenCalledOnce();
     expect(auditWrite).toHaveBeenCalledWith(expect.objectContaining({
@@ -149,6 +152,10 @@ describe("accounts service", () => {
     expect(auditWrite).toHaveBeenCalledWith(expect.not.objectContaining({
       changedFields: expect.arrayContaining(["email"])
     }));
+    expect(auditWrite).toHaveBeenCalledWith(expect.objectContaining({
+      changedFields: expect.arrayContaining(["mobile"])
+    }));
+    expect(JSON.stringify(auditWrite.mock.calls)).not.toContain("+86 13037174892");
   });
 
   it("encrypts a new account password without persisting plaintext", async () => {
@@ -244,6 +251,28 @@ describe("accounts service", () => {
     expect(account.accountPassword).toBe(encryptedPassword);
   });
 
+  it("preserves an existing mobile for non-mobile patches and clears it only when explicitly blank", async () => {
+    const account = accountDocument({ mobile: "+86 13037174892" });
+    const persisted = account as AccountTestDocument & { mobile?: string };
+    const deps = dependencies({ findById: vi.fn(async () => account) });
+    const service = createAccountsService(deps);
+
+    await service.update(String(account._id), { remark: "keep" }, context);
+
+    expect(persisted.mobile).toBe("+86 13037174892");
+    expect(deps.audit.write).toHaveBeenLastCalledWith(expect.objectContaining({
+      changedFields: expect.not.arrayContaining(["mobile"])
+    }));
+    expect(JSON.stringify(deps.audit.write.mock.calls)).not.toContain("+86 13037174892");
+
+    await service.update(String(account._id), { mobile: "   " }, context);
+
+    expect(persisted.mobile).toBe("");
+    expect(deps.audit.write).toHaveBeenLastCalledWith(expect.objectContaining({
+      changedFields: expect.arrayContaining(["mobile"])
+    }));
+  });
+
   it("replaces an existing account password with encrypted content", async () => {
     const account = accountDocument({ accountPassword: encryptedPassword });
     const deps = dependencies({ findById: vi.fn(async () => account) });
@@ -298,7 +327,8 @@ describe("accounts service", () => {
 
     await expect(legacyService.get(String(legacyAccount._id))).resolves.toMatchObject({
       accountKind: "google",
-      email: ""
+      email: "",
+      mobile: ""
     });
     await expect(emailService.get(String(emailAccount._id))).resolves.toMatchObject({
       accountKind: "email",

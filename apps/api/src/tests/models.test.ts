@@ -39,6 +39,12 @@ describe("Account model", () => {
     expect(AccountModel.schema.path("accountKind")?.options.enum).toEqual(ACCOUNT_KINDS);
     expect(AccountModel.schema.path("email")).toBeDefined();
     expect(AccountModel.schema.path("email")?.options.default).toBe("");
+    expect(AccountModel.schema.path("mobile")?.options).toMatchObject({
+      required: false,
+      trim: true,
+      maxlength: 32,
+      default: ""
+    });
   });
 
   it("accepts unknown and rejects values outside the shared status enums", async () => {
@@ -104,6 +110,7 @@ describe("Account model", () => {
       douyinId: "94946893573",
       accountKind: "email",
       email: "mail@example.com",
+      mobile: " +86 13037174892 ",
       secUid: "MS4wLjABAAAA-Fixture",
       registeredAt: new Date("2026-07-27T00:00:00.000Z"),
       opName: " 星河 ",
@@ -131,6 +138,8 @@ describe("Account model", () => {
     expect(account.searchText).toContain("123456789");
     expect(account.searchText).toContain("抖音");
     expect(account.searchText).toContain("mail@example.com");
+    expect(account.get("mobile")).toBe("+86 13037174892");
+    expect(account.searchText).toContain("+86 13037174892");
     expect(account.toObject().accountPassword).toEqual(encryptedPassword);
     expect(account.searchText).not.toContain("douyin-pass");
   });

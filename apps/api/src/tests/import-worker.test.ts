@@ -59,6 +59,39 @@ describe("processImportRow", () => {
     expect(accounts.update).not.toHaveBeenCalled();
   });
 
+  it("forwards parsed mobile values through create and update", async () => {
+    const mobileInput = { ...input, mobile: "+86 13037174892" };
+    const createAccounts = accountServiceStub();
+
+    await processImportRow(
+      createAccounts,
+      mobileInput,
+      "skip",
+      context,
+      vi.fn(async () => null)
+    );
+
+    expect(createAccounts.create).toHaveBeenCalledWith(
+      expect.objectContaining({ mobile: "+86 13037174892" }),
+      context
+    );
+
+    const updateAccounts = accountServiceStub();
+    await processImportRow(
+      updateAccounts,
+      mobileInput,
+      "update",
+      context,
+      vi.fn(async () => ({ _id: "existing-id" }))
+    );
+
+    expect(updateAccounts.update).toHaveBeenCalledWith(
+      "existing-id",
+      expect.objectContaining({ mobile: "+86 13037174892" }),
+      context
+    );
+  });
+
   it("skips an existing row without invoking account writes", async () => {
     const accounts = accountServiceStub();
     const result = await processImportRow(
@@ -336,6 +369,40 @@ describe("processNextImportJob", () => {
 
     expect(accounts.create).toHaveBeenCalledWith(
       expect.objectContaining({ accountKind: "email", email: "" }),
+      expect.anything()
+    );
+  });
+
+  it("defaults a legacy staged row without mobile to an empty string", async () => {
+    const job = {
+      id: "job-id",
+      previewId: "preview-id",
+      duplicateStrategy: "skip" as const,
+      status: "running" as const,
+      processed: 0,
+      createdCount: 0,
+      updatedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      save: vi.fn(async () => undefined),
+      set: vi.fn()
+    };
+    vi.spyOn(ImportJobModel, "findOneAndUpdate").mockResolvedValue(job as never);
+    vi.spyOn(ImportPreviewModel, "findById").mockResolvedValue({
+      _id: "preview-id",
+      stagedRows: [{ ...input, mobile: undefined }]
+    } as never);
+    vi.spyOn(ImportPreviewModel, "findByIdAndDelete").mockResolvedValue(null);
+    vi.spyOn(AccountModel, "findOne").mockReturnValue({
+      select: () => ({ lean: async () => null })
+    } as never);
+    const accounts = accountServiceStub();
+    const cipher = { encrypt: vi.fn(), decrypt: vi.fn(() => "openid|token|pay|pfkey|1782303418") };
+
+    await processNextImportJob(accounts, cipher);
+
+    expect(accounts.create).toHaveBeenCalledWith(
+      expect.objectContaining({ mobile: "" }),
       expect.anything()
     );
   });
