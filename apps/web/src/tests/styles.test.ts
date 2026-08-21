@@ -55,4 +55,13 @@ describe("global form control styles", () => {
     expect(tableScrollRule).toContain("overflow-x: auto;");
     expect(checkCellRule).toContain("text-overflow: clip !important;");
   });
+
+  it("keeps all five mobile navigation links in the fixed bottom bar", () => {
+    const mobileRule = styles.match(
+      /@media \(max-width: 680px\) \{[\s\S]*?\.sidebar nav\s*\{[^}]+\}/
+    )?.[0] ?? "";
+
+    expect(mobileRule).toContain("grid-template-columns: repeat(5,1fr);");
+    expect(mobileRule).not.toContain("repeat(4,1fr)");
+  });
 });
