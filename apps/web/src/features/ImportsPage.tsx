@@ -80,6 +80,7 @@ export function ImportsPage() {
   const [pasteText, setPasteText] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
   const previewRequestVersion = useRef(0);
+  const previousAccountKind = useRef(accountKind);
   const jobs = useQuery({
     queryKey: ["import-jobs"],
     queryFn: () => api<ImportJob[]>("/api/imports"),
@@ -119,6 +120,12 @@ export function ImportsPage() {
   };
   const handleAccountKindChange = (nextKind: AccountKind) => {
     if (nextKind === accountKind) return;
+    setSearchParams({ accountKind: nextKind });
+  };
+
+  useEffect(() => {
+    if (previousAccountKind.current === accountKind) return;
+    previousAccountKind.current = accountKind;
     previewRequestVersion.current += 1;
     setPreview(null);
     setPasteText("");
@@ -126,8 +133,7 @@ export function ImportsPage() {
     setDragActive(false);
     setFileInputKey((key) => key + 1);
     upload.reset();
-    setSearchParams({ accountKind: nextKind });
-  };
+  }, [accountKind]);
 
   useEffect(() => {
     const isFileDrag = (event: DragEvent | globalThis.DragEvent) => {

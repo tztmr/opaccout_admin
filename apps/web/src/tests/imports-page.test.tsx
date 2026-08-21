@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { buildPasteImportCsv, ImportsPage } from "../features/ImportsPage";
 
 afterEach(() => {
@@ -22,6 +22,11 @@ function CurrentLocation() {
   return <output data-testid="current-location">{`${location.pathname}${location.search}`}</output>;
 }
 
+function TestNavigation() {
+  const navigate = useNavigate();
+  return <button type="button" onClick={() => navigate("/imports?accountKind=google")}>外部打开谷歌导入</button>;
+}
+
 function renderPage(initialEntries = ["/imports"]) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
@@ -32,6 +37,7 @@ function renderPage(initialEntries = ["/imports"]) {
       <MemoryRouter initialEntries={initialEntries}>
         <ImportsPage />
         <CurrentLocation />
+        <TestNavigation />
       </MemoryRouter>
     </QueryClientProvider>
   );
@@ -210,6 +216,47 @@ describe("imports page", () => {
     await user.selectOptions(selector, "google");
     expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
     expect(textarea).toHaveValue("");
+  });
+
+  it("clears email import state when navigation changes the account kind in the URL", async () => {
+    let previewCalls = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return json([]);
+      if (path === "/api/imports/preview") {
+        previewCalls += 1;
+        if (previewCalls === 1) {
+          return json({ previewId: "email-preview", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201);
+        }
+        return json({ error: { code: "IMPORT_PARSE_FAILED", message: "预览失败" }, requestId: "test" }, 500);
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const uploadCard = await screen.findByText("上传账号文件");
+    const staleFileInput = document.querySelector<HTMLInputElement>('input[name="file"]');
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["email"], "email-accounts.csv", { type: "text/csv" })] }
+    });
+    await screen.findByRole("heading", { name: "导入预览" });
+
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["invalid"], "invalid.csv", { type: "text/csv" })] }
+    });
+    await screen.findByText("预览失败");
+    const textarea = screen.getByRole("textbox", { name: "粘贴导入内容" });
+    await user.type(textarea, "stale input");
+
+    await user.click(screen.getByRole("button", { name: "外部打开谷歌导入" }));
+
+    expect(screen.getByRole("combobox", { name: "账号类型" })).toHaveValue("google");
+    expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /确认导入/ })).not.toBeInTheDocument();
+    expect(textarea).toHaveValue("");
+    expect(document.querySelector<HTMLInputElement>('input[name="file"]')).not.toBe(staleFileInput);
+    expect(screen.queryByText("预览失败")).not.toBeInTheDocument();
   });
 
   it("labels historical import jobs without a kind as Google accounts", async () => {
