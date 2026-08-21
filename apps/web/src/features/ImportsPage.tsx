@@ -80,6 +80,7 @@ export function ImportsPage() {
   const [pasteText, setPasteText] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
   const previewRequestVersion = useRef(0);
+  const accountKindVersion = useRef(0);
   const previousAccountKind = useRef(accountKind);
   const jobs = useQuery({
     queryKey: ["import-jobs"],
@@ -87,35 +88,65 @@ export function ImportsPage() {
     refetchInterval: (query) => query.state.data?.some((job) => job.status === "queued" || job.status === "running") ? 1500 : false
   });
   const upload = useMutation({
-    mutationFn: async ({ file, accountKind }: { file: File; accountKind: AccountKind; requestVersion: number }) => {
+    mutationFn: async ({ file, accountKind }: {
+      file: File;
+      accountKind: AccountKind;
+      accountKindVersion: number;
+      requestVersion: number;
+    }) => {
       const form = new FormData();
       form.append("file", file);
       form.append("accountKind", accountKind);
       return api<Preview>("/api/imports/preview", { method: "POST", body: form });
     },
     onSuccess: (value, variables) => {
-      if (variables.requestVersion === previewRequestVersion.current) {
+      if (
+        variables.accountKindVersion === accountKindVersion.current &&
+        variables.requestVersion === previewRequestVersion.current
+      ) {
         setPreview(value);
         setNotice("");
       }
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "文件解析失败")
+    onError: (error, variables) => {
+      if (
+        variables.accountKindVersion === accountKindVersion.current &&
+        variables.requestVersion === previewRequestVersion.current
+      ) {
+        setNotice(error instanceof Error ? error.message : "文件解析失败");
+      }
+    }
   });
   const execute = useMutation({
-    mutationFn: () => api<{ jobId: string }>("/api/imports/execute", {
+    mutationFn: ({ previewId, duplicateStrategy }: {
+      previewId: string;
+      duplicateStrategy: "skip" | "update";
+      accountKindVersion: number;
+    }) => api<{ jobId: string }>("/api/imports/execute", {
       method: "POST",
-      body: JSON.stringify({ previewId: preview?.previewId, duplicateStrategy: strategy })
+      body: JSON.stringify({ previewId, duplicateStrategy })
     }),
-    onSuccess: () => {
-      setPreview(null);
-      setNotice("导入任务已提交，将在后台继续处理");
-      void client.invalidateQueries({ queryKey: ["import-jobs"] });
+    onSuccess: (_value, variables) => {
+      if (variables.accountKindVersion === accountKindVersion.current) {
+        setPreview(null);
+        setNotice("导入任务已提交，将在后台继续处理");
+        void client.invalidateQueries({ queryKey: ["import-jobs"] });
+      }
     },
-    onError: (error) => setNotice(error instanceof Error ? error.message : "提交导入失败")
+    onError: (error, variables) => {
+      if (variables.accountKindVersion === accountKindVersion.current) {
+        setNotice(error instanceof Error ? error.message : "提交导入失败");
+      }
+    }
   });
   const handleFile = (file: File | null | undefined) => {
     if (file instanceof File && file.size) {
-      upload.mutate({ file, accountKind, requestVersion: ++previewRequestVersion.current });
+      upload.mutate({
+        file,
+        accountKind,
+        accountKindVersion: accountKindVersion.current,
+        requestVersion: ++previewRequestVersion.current
+      });
     }
   };
   const handleAccountKindChange = (nextKind: AccountKind) => {
@@ -126,6 +157,7 @@ export function ImportsPage() {
   useEffect(() => {
     if (previousAccountKind.current === accountKind) return;
     previousAccountKind.current = accountKind;
+    accountKindVersion.current += 1;
     previewRequestVersion.current += 1;
     setPreview(null);
     setPasteText("");
@@ -133,6 +165,7 @@ export function ImportsPage() {
     setDragActive(false);
     setFileInputKey((key) => key + 1);
     upload.reset();
+    execute.reset();
   }, [accountKind]);
 
   useEffect(() => {
@@ -243,7 +276,7 @@ export function ImportsPage() {
     {preview && <div className="panel preview-panel">
       <div className="panel-head"><div><h2>导入预览</h2><p>{accountKindLabels[accountKind]} · 共 {preview.totalRows} 行，可导入 {preview.validRows} 行，错误 {preview.errors.length} 行</p></div></div>
       {preview.errors.length > 0 && <div className="error-list"><AlertTriangle size={18}/><div>{preview.errors.slice(0, 8).map((item) => <p key={`${item.row}-${item.field}-${item.message}`}>第 {item.row} 行{item.field ? ` · ${item.field}` : ""}：{item.message}</p>)}</div></div>}
-      <div className="preview-options"><label><input type="radio" checked={strategy==="skip"} onChange={()=>setStrategy("skip")}/>重复抖音号跳过</label><label><input type="radio" checked={strategy==="update"} onChange={()=>setStrategy("update")}/>重复抖音号更新</label><button className="primary" disabled={!preview.validRows||execute.isPending} onClick={()=>execute.mutate()}>{execute.isPending ? "提交中…" : `确认导入 ${preview.validRows} 行`}</button></div>
+      <div className="preview-options"><label><input type="radio" checked={strategy==="skip"} onChange={()=>setStrategy("skip")}/>重复抖音号跳过</label><label><input type="radio" checked={strategy==="update"} onChange={()=>setStrategy("update")}/>重复抖音号更新</label><button className="primary" disabled={!preview.validRows||execute.isPending} onClick={()=>execute.mutate({ previewId: preview.previewId, duplicateStrategy: strategy, accountKindVersion: accountKindVersion.current })}>{execute.isPending ? "提交中…" : `确认导入 ${preview.validRows} 行`}</button></div>
     </div>}
     <div className="panel">
       <div className="panel-head"><div><h2>历史任务</h2><p>最近 100 次导入</p></div></div>

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
@@ -15,6 +15,16 @@ function json(body: unknown, status = 200) {
     status,
     headers: { "content-type": "application/json" }
   });
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 function CurrentLocation() {
@@ -257,6 +267,73 @@ describe("imports page", () => {
     expect(textarea).toHaveValue("");
     expect(document.querySelector<HTMLInputElement>('input[name="file"]')).not.toBe(staleFileInput);
     expect(screen.queryByText("预览失败")).not.toBeInTheDocument();
+  });
+
+  it("ignores an old preview failure after URL navigation changes the account kind", async () => {
+    const previewResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") return previewResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["email"], "email-accounts.csv", { type: "text/csv" })] }
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/imports/preview",
+      expect.objectContaining({ method: "POST" })
+    ));
+    await user.click(screen.getByRole("button", { name: "外部打开谷歌导入" }));
+
+    await act(async () => {
+      previewResponse.reject(new Error("旧预览失败"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("combobox", { name: "账号类型" })).toHaveValue("google");
+    expect(screen.queryByText("旧预览失败")).not.toBeInTheDocument();
+  });
+
+  it("ignores an old execute completion after URL navigation changes the account kind", async () => {
+    const executeResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") {
+        return Promise.resolve(json({ previewId: "email-preview", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
+      }
+      if (path === "/api/imports/execute") return executeResponse.promise;
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage(["/imports?accountKind=email"]);
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["email"], "email-accounts.csv", { type: "text/csv" })] }
+    });
+    await screen.findByRole("button", { name: "确认导入 1 行" });
+    await user.click(screen.getByRole("button", { name: "确认导入 1 行" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      "/api/imports/execute",
+      expect.objectContaining({ method: "POST" })
+    ));
+    await user.click(screen.getByRole("button", { name: "外部打开谷歌导入" }));
+
+    await act(async () => {
+      executeResponse.resolve(json({ jobId: "email-job" }, 202));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("combobox", { name: "账号类型" })).toHaveValue("google");
+    expect(screen.queryByText("导入任务已提交，将在后台继续处理")).not.toBeInTheDocument();
   });
 
   it("labels historical import jobs without a kind as Google accounts", async () => {
