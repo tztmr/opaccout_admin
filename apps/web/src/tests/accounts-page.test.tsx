@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { DEFAULT_ACCOUNT_COLUMN_ORDER } from "@douyin-admin/shared";
 import { AccountsPage } from "../features/AccountsPage";
 
 afterEach(() => {
@@ -30,7 +31,7 @@ function renderPage(initialEntries = ["/accounts/google"], accountKind: "google"
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } }
   });
 
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={initialEntries}>
         <Routes>
@@ -39,12 +40,16 @@ function renderPage(initialEntries = ["/accounts/google"], accountKind: "google"
       </MemoryRouter>
     </QueryClientProvider>
   );
+  return { ...view, client };
 }
 
 function accountFixture(index: number, accountStatus: "normal" | "banned" = "normal") {
   return {
     _id: `account-${index}`,
     douyinId: String(90000000000 + index),
+    accountKind: "google" as const,
+    email: "",
+    mobile: "",
     secUid: `MS4wLjABAAAA-fixture-${index}`,
     registeredAt: "2026-07-01T00:00:00.000Z",
     opName: `API昵称${index}`,
@@ -64,6 +69,11 @@ function accountFixture(index: number, accountStatus: "normal" | "banned" = "nor
   };
 }
 
+const accountColumnOrders = {
+  google: [...DEFAULT_ACCOUNT_COLUMN_ORDER.google],
+  email: [...DEFAULT_ACCOUNT_COLUMN_ORDER.email]
+};
+
 describe("accounts page", () => {
   it("keeps account data flows and the email column scoped to the active kind", async () => {
     const account = { ...accountFixture(1), accountKind: "email" as const, email: "email-account@example.test" };
@@ -81,7 +91,7 @@ describe("accounts page", () => {
     renderPage(["/accounts/email"], "email");
 
     expect(await screen.findByRole("heading", { name: "抖音邮箱号管理" })).toBeInTheDocument();
-    expect(screen.getAllByRole("columnheader")).toHaveLength(18);
+    expect(screen.getAllByRole("columnheader")).toHaveLength(19);
     expect(screen.getByRole("columnheader", { name: "邮箱" })).toBeInTheDocument();
     expect((await screen.findByText(account.email)).closest("td")).toHaveAttribute("title", account.email);
     await waitFor(() => expect(fetchMock.mock.calls.map(([input]) => String(input)).some((path) =>
@@ -216,11 +226,206 @@ describe("accounts page", () => {
     const secUid = await screen.findByRole("link", { name: account.secUid });
     const table = secUid.closest("table")!;
     expect(table).toHaveClass("accounts-table");
-    expect(table.querySelectorAll("colgroup col")).toHaveLength(17);
+    expect(table.querySelectorAll("colgroup col")).toHaveLength(18);
     expect(secUid.closest("td")).toHaveAttribute("title", account.secUid);
     expect(screen.getByText(account.accountPassword).closest("td")).toHaveAttribute("title", account.accountPassword);
     expect(screen.getByText(account.opName).closest("td")).toHaveAttribute("title", account.opName);
     expect(screen.getByText(account.remark).closest("td")).toHaveAttribute("title", account.remark);
+  });
+
+  it.each([
+    { accountKind: "google" as const, heading: "抖音谷歌账号管理", totalColumns: 18 },
+    { accountKind: "email" as const, heading: "抖音邮箱号管理", totalColumns: 19 }
+  ])("renders default mobile placement and legacy values for $accountKind", async ({
+    accountKind,
+    heading,
+    totalColumns
+  }) => {
+    const mobile = "+86 13037174892";
+    const accounts = [
+      { ...accountFixture(31), accountKind, email: accountKind === "email" ? "mobile@example.test" : "", mobile },
+      { ...accountFixture(32), accountKind, email: accountKind === "email" ? "legacy@example.test" : "", mobile: "" }
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") return json(accountColumnOrders);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: accounts, page: 1, pageSize: 20, total: 2, totalPages: 1,
+        stats: { total: 2, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+
+    renderPage([`/accounts/${accountKind}`], accountKind);
+    await screen.findByRole("heading", { name: heading });
+
+    const headers = screen.getAllByRole("columnheader");
+    expect(headers).toHaveLength(totalColumns);
+    expect(headers.findIndex((header) => header.textContent === "手机号"))
+      .toBe(headers.findIndex((header) => header.textContent === "短 OP") + 1);
+    await screen.findByText(mobile);
+    const mobileCells = document.querySelectorAll<HTMLTableCellElement>('tbody td[data-column-id="mobile"]');
+    expect(mobileCells).toHaveLength(2);
+    expect(within(mobileCells[0]!).getByText(mobile)).toHaveAttribute("title", mobile);
+    expect(mobileCells[1]).toHaveTextContent("—");
+  });
+
+  it.each([
+    { accountKind: "google" as const, createLabel: "新增谷歌账号" },
+    { accountKind: "email" as const, createLabel: "新增邮箱号" }
+  ])("normalizes valid mobile create/edit submissions and blocks invalid $accountKind saves", async ({
+    accountKind,
+    createLabel
+  }) => {
+    const created: Array<Record<string, unknown>> = [];
+    const updated: Array<Record<string, unknown>> = [];
+    const account = {
+      ...accountFixture(41),
+      accountKind,
+      email: accountKind === "email" ? "mobile-form@example.test" : "",
+      mobile: "+86 13900139000"
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") return json(accountColumnOrders);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [account], page: 1, pageSize: 20, total: 1, totalPages: 1,
+        stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      if (path === "/api/accounts/check-douyin") {
+        return json({ secUid: "MS4wLjABAAAA-mobile", accountStatus: "normal" });
+      }
+      if (path === "/api/accounts") {
+        created.push(JSON.parse(String(init?.body)));
+        return json({});
+      }
+      if (path === "/api/accounts/account-41") {
+        updated.push(JSON.parse(String(init?.body)));
+        return json({});
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+    const user = userEvent.setup();
+
+    renderPage([`/accounts/${accountKind}`], accountKind);
+    await user.click(await screen.findByRole("button", { name: createLabel }));
+    await user.type(screen.getByLabelText("抖音号"), "93900112233");
+    if (accountKind === "email") {
+      await user.type(screen.getByLabelText("邮箱"), "new-mobile@example.test");
+    }
+    await user.type(screen.getByLabelText("手机号"), " +86   13037174892 ");
+    await user.type(screen.getByLabelText("OP卡密"), "a|b|1782303418");
+    await user.type(within(screen.getByRole("heading", { name: createLabel }).closest(".drawer")!).getByLabelText("归属人"), "小王");
+    await user.click(screen.getByRole("button", { name: "检测" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(created).toHaveLength(1));
+    expect(created[0]).toMatchObject({ mobile: "+86 13037174892", accountKind });
+
+    await user.click((await screen.findAllByRole("button", { name: "编辑" }))[0]!);
+    const editMobile = screen.getByLabelText("手机号");
+    expect(editMobile).toHaveValue(account.mobile);
+    await user.clear(editMobile);
+    await user.type(editMobile, " +852   65478974 ");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(updated).toHaveLength(1));
+    expect(updated[0]).toMatchObject({ mobile: "+852 65478974" });
+
+    await user.click((await screen.findAllByRole("button", { name: "编辑" }))[0]!);
+    const invalidMobile = screen.getByLabelText("手机号");
+    await user.clear(invalidMobile);
+    await user.type(invalidMobile, "+86-13037174892");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("手机号格式不正确，请使用 +国际区号 本地号码")).toBeInTheDocument();
+    expect(updated).toHaveLength(1);
+  });
+
+  it("applies a saved Email order immediately and keeps Google independent", async () => {
+    const account = {
+      ...accountFixture(51),
+      accountKind: "email" as const,
+      email: "ordered@example.test",
+      mobile: "+852 65478974"
+    };
+    let savedOrder: string[] | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") return json(accountColumnOrders);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: ["小王"] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [account], page: 1, pageSize: 20, total: 1, totalPages: 1,
+        stats: { total: 1, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      if (path === "/api/settings/account-columns/email") {
+        savedOrder = JSON.parse(String(init?.body)).order;
+        return json({ order: savedOrder });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    const view = renderPage(["/accounts/email"], "email");
+    await screen.findByText(account.email);
+    await user.click(screen.getByRole("button", { name: "表头设置" }));
+    fireEvent.dragStart(screen.getByRole("listitem", { name: "手机号" }));
+    fireEvent.drop(screen.getByRole("listitem", { name: "抖音号" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+
+    await waitFor(() => expect(savedOrder).toEqual([
+      "mobile", "douyin", "email", "password", "secuid", "date", "opname",
+      "opsecret", "shortop", "project", "expiry", "owner", "region", "sale", "status", "remark"
+    ]));
+    expect(screen.getAllByRole("columnheader").slice(0, 5).map((node) => node.textContent))
+      .toEqual(["", "序号", "手机号", "抖音号", "邮箱"]);
+    expect(Array.from(document.querySelectorAll("colgroup col")).slice(0, 5).map((node) => node.className))
+      .toEqual(["col-check", "col-index", "col-mobile", "col-douyin", "col-email"]);
+    expect(Array.from(document.querySelectorAll("tbody tr")[0]!.querySelectorAll("td")).slice(0, 5).map((node) => node.getAttribute("data-column-id")))
+      .toEqual([null, null, "mobile", "douyin", "email"]);
+
+    view.rerender(
+      <QueryClientProvider client={view.client}>
+        <MemoryRouter initialEntries={["/accounts/google"]}>
+          <Routes><Route path="/accounts/*" element={<AccountsPage accountKind="google" />} /></Routes>
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(screen.getAllByRole("columnheader")[2]).toHaveTextContent("抖音号"));
+    const googleHeaders = screen.getAllByRole("columnheader");
+    expect(googleHeaders.findIndex((header) => header.textContent === "手机号"))
+      .toBe(googleHeaders.findIndex((header) => header.textContent === "短 OP") + 1);
+  });
+
+  it("never sends a client column order in the export request", async () => {
+    let exportPayload: Record<string, unknown> | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") return json(accountColumnOrders);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [], page: 1, pageSize: 20, total: 0, totalPages: 1,
+        stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      if (path === "/api/exports/accounts") {
+        exportPayload = JSON.parse(String(init?.body));
+        return new Response("csv", { status: 200 });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:synthetic"),
+      revokeObjectURL: vi.fn()
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+    const user = userEvent.setup();
+
+    renderPage();
+    await user.click(await screen.findByRole("button", { name: "导出数据" }));
+    await waitFor(() => expect(exportPayload).toBeDefined());
+    expect(exportPayload).not.toHaveProperty("columnOrder");
+    expect(exportPayload).not.toHaveProperty("columns");
   });
 
   it("shows visible account passwords and submits their create and edit values", async () => {
@@ -306,7 +511,7 @@ describe("accounts page", () => {
       (await screen.findAllByRole("columnheader")).map((node) => node.textContent)
     ).toEqual([
       "", "序号", "抖音号", "密码", "sec_uid", "注册时间", "OP名称", "OP卡密",
-      "短 OP", "项目", "OP到期时间", "归属人", "注册地区", "售卖状态", "账号状态", "备注", "操作"
+      "短 OP", "手机号", "项目", "OP到期时间", "归属人", "注册地区", "售卖状态", "账号状态", "备注", "操作"
     ]);
     expect(await screen.findByText("douyin-pass-1")).toBeVisible();
     expect(screen.queryByText("••••••", { selector: ".account-password-cell" }))

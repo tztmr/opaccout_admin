@@ -1,8 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Download, FileSpreadsheet, UploadCloud, FileText } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
-import type { AccountKind } from "@douyin-admin/shared";
+import type { AccountColumnId, AccountKind } from "@douyin-admin/shared";
+import {
+  ACCOUNT_COLUMN_LABELS,
+  ACCOUNT_IMPORT_COLUMN_IDS,
+  normalizeAccountColumnOrder
+} from "@douyin-admin/shared";
 import { api } from "../api";
 
 type Preview = {
@@ -34,6 +39,7 @@ type ImportJob = {
   errorSummary?: string;
   createdAt: string;
 };
+type AccountColumnOrders = Record<AccountKind, AccountColumnId[]>;
 
 const jobLabels: Record<ImportJob["status"], string> = {
   queued: "等待中",
@@ -51,17 +57,20 @@ function parseAccountKind(value: string | null): AccountKind {
   return value === "email" ? "email" : "google";
 }
 
-export function buildPasteImportCsv(lines: string[], accountKind: AccountKind): string {
-  const headers = accountKind === "email"
-    ? ["抖音号", "邮箱", "注册时间", "OP名称", "OP卡密", "归属人", "注册地区", "售卖状态", "备注"]
-    : ["抖音号", "注册时间", "OP名称", "OP卡密", "归属人", "注册地区", "售卖状态", "备注"];
+export function buildPasteImportCsv(lines: string[], accountKind: AccountKind, order: unknown): string {
+  const importable = new Set(ACCOUNT_IMPORT_COLUMN_IDS);
+  const columnIds = normalizeAccountColumnOrder(accountKind, order)
+    .filter((id) => importable.has(id));
+  const headers = columnIds.map((id) => ACCOUNT_COLUMN_LABELS[id]);
   const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
   const csvLines = [headers.map(escapeCsv).join(",")];
 
   for (const line of lines) {
     const parts = line.split("----").map((part) => part.trim());
-    const registeredRegionIndex = accountKind === "email" ? 6 : 5;
-    if (parts.length === headers.length - 1) parts.splice(registeredRegionIndex, 0, "");
+    const registeredRegionIndex = columnIds.indexOf("region");
+    if (parts.length === headers.length - 1 && registeredRegionIndex >= 0) {
+      parts.splice(registeredRegionIndex, 0, "");
+    }
     while (parts.length < headers.length) parts.push("");
     csvLines.push(parts.slice(0, headers.length).map(escapeCsv).join(","));
   }
@@ -85,6 +94,19 @@ export function ImportsPage() {
   const currentPreview = useRef<Preview | null>(null);
   const accountKindVersion = useRef(0);
   const previousAccountKind = useRef(accountKind);
+  const columnOrders = useQuery({
+    queryKey: ["account-column-orders"],
+    queryFn: () => api<AccountColumnOrders>("/api/settings/account-columns")
+  });
+  const activeColumnOrder = useMemo(
+    () => normalizeAccountColumnOrder(accountKind, columnOrders.data?.[accountKind]),
+    [accountKind, columnOrders.data]
+  );
+  const importableColumnIds = useMemo(() => {
+    const importable = new Set(ACCOUNT_IMPORT_COLUMN_IDS);
+    return activeColumnOrder.filter((id) => importable.has(id));
+  }, [activeColumnOrder]);
+  const pasteHeaders = importableColumnIds.map((id) => ACCOUNT_COLUMN_LABELS[id]);
   const jobs = useQuery({
     queryKey: ["import-jobs"],
     queryFn: () => api<ImportJob[]>("/api/imports"),
@@ -276,7 +298,7 @@ export function ImportsPage() {
 
     if (overridePending) return;
 
-    const csvContent = buildPasteImportCsv(lines, accountKind);
+    const csvContent = buildPasteImportCsv(lines, accountKind, activeColumnOrder);
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv' });
     const file = new File([blob], '粘贴导入.csv', { type: 'text/csv' });
 
@@ -321,14 +343,14 @@ export function ImportsPage() {
           aria-label="粘贴导入内容"
           value={pasteText}
           onChange={e => setPasteText(e.target.value)}
-          placeholder={accountKind === "email" ? "抖音号----邮箱----注册时间----OP名称----OP卡密----归属人----注册地区----售卖状态----备注\n（或仅输入 抖音号----注册时间 以覆盖时间）" : "抖音号----注册时间----OP名称----OP卡密----归属人----注册地区----售卖状态----备注\n（或仅输入 抖音号----注册时间 以覆盖时间）"}
+          placeholder={`${pasteHeaders.join("----")}\n（或仅输入 抖音号----注册时间 以覆盖时间）`}
           required
         />
         <button className="primary" disabled={pasteActionPending || !pasteText.trim()}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
       </form>
       <div className="guide-card">
         <FileSpreadsheet size={25}/><h2>表头要求</h2>
-        <p>{accountKind === "email" ? "抖音号、邮箱、注册时间、OP名称、OP卡密、归属人、注册地区、售卖状态、备注。" : "抖音号、注册时间、OP名称、OP卡密、归属人、注册地区、售卖状态、备注。"}</p>
+        <p>{pasteHeaders.join("、")}。</p>
         <p>sec_uid、OP到期时间和账号状态会由系统自动获取或计算，无需导入。</p>
       </div>
     </div>

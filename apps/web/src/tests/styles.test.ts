@@ -34,6 +34,7 @@ describe("global form control styles", () => {
     expect(accountTableRule).toContain("table-layout: fixed;");
     expect(accountTableRule).toContain("min-width: 1410px;");
     expect(accountTableRule).not.toContain("1720px");
+    expect(styles).not.toMatch(/min-width:\s*1[6-9]\d{2}px/);
     expect(actionsRule).toContain("gap: 3px;");
   });
 
@@ -42,10 +43,13 @@ describe("global form control styles", () => {
       styles.match(/\.accounts-table-email\s*\{[^}]+\}/)?.[0] ?? "";
     const emailColumnRule =
       styles.match(/\.accounts-table \.col-email\s*\{[^}]+\}/)?.[0] ?? "";
+    const mobileColumnRule =
+      styles.match(/\.accounts-table \.col-mobile\s*\{[^}]+\}/)?.[0] ?? "";
 
     expect(emailTableRule).toContain("min-width: 1518px;");
     expect(emailTableRule).not.toContain("1720px");
     expect(emailColumnRule).toContain("width: 108px;");
+    expect(mobileColumnRule).toMatch(/width:\s*\d+px;/);
   });
 
   it("keeps table overflow and checkbox clipping scoped separately", () => {
@@ -54,6 +58,14 @@ describe("global form control styles", () => {
 
     expect(tableScrollRule).toContain("overflow-x: auto;");
     expect(checkCellRule).toContain("text-overflow: clip !important;");
+    expect(styles).not.toMatch(/(?:html|body|\.main|\.main > section)\s*\{[^}]*overflow-x:\s*(?:auto|scroll)/);
+  });
+
+  it("styles the explicit column-order dialog without adding a table overlay", () => {
+    expect(styles).toMatch(/\.column-order-dialog\s*\{[^}]+\}/);
+    expect(styles).toMatch(/\.column-order-list\s*\{[^}]+\}/);
+    expect(styles).toMatch(/\.column-order-list li\s*\{[^}]+\}/);
+    expect(styles).not.toMatch(/\.table-scroll::(?:before|after)/);
   });
 
   it("keeps all five mobile navigation links in the fixed bottom bar", () => {

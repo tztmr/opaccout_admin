@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { DEFAULT_ACCOUNT_COLUMN_ORDER } from "@douyin-admin/shared";
 import { buildPasteImportCsv, ImportsPage } from "../features/ImportsPage";
 
 afterEach(() => {
@@ -25,6 +26,15 @@ function deferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+function readBlob(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => resolve(String(reader.result));
+    reader.readAsText(blob);
+  });
 }
 
 function CurrentLocation() {
@@ -154,10 +164,10 @@ describe("imports page", () => {
 
   it("builds Google pasted CSV with 注册地区 after 归属人 and defaults it blank", async () => {
     const csv = buildPasteImportCsv([
-      "94946893573----2026-07-27----星图运营----a|b|1782303418----小王----未售卖----正常账号"
-    ], "google");
-    expect(csv).toContain('"抖音号","注册时间","OP名称","OP卡密","归属人","注册地区","售卖状态","备注"');
-    expect(csv).toContain('"94946893573","2026-07-27","星图运营","a|b|1782303418","小王","","未售卖","正常账号"');
+      "94946893573----account-pass----2026-07-27----星图运营----a|b|1782303418----+86 13037174892----抖音----小王----未售卖----正常账号"
+    ], "google", DEFAULT_ACCOUNT_COLUMN_ORDER.google);
+    expect(csv).toContain('"抖音号","密码","注册时间","OP名称","OP卡密","手机号","项目","归属人","注册地区","售卖状态","备注"');
+    expect(csv).toContain('"94946893573","account-pass","2026-07-27","星图运营","a|b|1782303418","+86 13037174892","抖音","小王","","未售卖","正常账号"');
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
@@ -182,8 +192,8 @@ describe("imports page", () => {
 
     const pasteCard = (await screen.findByText("文本快捷导入")).closest("form");
     await user.type(
-      await screen.findByPlaceholderText(/抖音号----注册时间/),
-      "94946893573----2026-07-27----星图运营----a|b|1782303418----小王----未售卖----正常账号"
+      await screen.findByRole("textbox", { name: "粘贴导入内容" }),
+      "94946893573----account-pass----2026-07-27----星图运营----a|b|1782303418----+86 13037174892----抖音----小王----未售卖----正常账号"
     );
     await user.click(
       within(pasteCard as HTMLElement).getByRole("button", { name: "解析并预览" })
@@ -194,11 +204,11 @@ describe("imports page", () => {
 
   it("builds an email pasted CSV without an email password and clears stale preview on kind change", async () => {
     const csv = buildPasteImportCsv([
-      "94946893573----email@example.test----2026-07-27----星图运营----a|b|1782303418----小王----未售卖----正常账号"
-    ], "email");
-    expect(csv).toContain('"抖音号","邮箱","注册时间","OP名称","OP卡密","归属人","注册地区","售卖状态","备注"');
+      "94946893573----email@example.test----account-pass----2026-07-27----星图运营----a|b|1782303418----+852 65478974----抖音----小王----未售卖----正常账号"
+    ], "email", DEFAULT_ACCOUNT_COLUMN_ORDER.email);
+    expect(csv).toContain('"抖音号","邮箱","密码","注册时间","OP名称","OP卡密","手机号","项目","归属人","注册地区","售卖状态","备注"');
     expect(csv).not.toContain("邮箱密码");
-    expect(csv).toContain('"94946893573","email@example.test","2026-07-27","星图运营","a|b|1782303418","小王","","未售卖","正常账号"');
+    expect(csv).toContain('"94946893573","email@example.test","account-pass","2026-07-27","星图运营","a|b|1782303418","+852 65478974","抖音","小王","","未售卖","正常账号"');
 
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
@@ -218,7 +228,7 @@ describe("imports page", () => {
     await user.selectOptions(selector, "email");
     const pasteCard = screen.getByText("文本快捷导入").closest("form");
     const textarea = screen.getByRole("textbox", { name: "粘贴导入内容" });
-    await user.type(textarea, "94946893573----email@example.test----2026-07-27----星图运营----a|b|1782303418----小王----未售卖----正常账号");
+    await user.type(textarea, "94946893573----email@example.test----account-pass----2026-07-27----星图运营----a|b|1782303418----+852 65478974----抖音----小王----未售卖----正常账号");
     await user.click(within(pasteCard as HTMLElement).getByRole("button", { name: "解析并预览" }));
     await screen.findByRole("heading", { name: "导入预览" });
 
@@ -226,6 +236,53 @@ describe("imports page", () => {
     await user.selectOptions(selector, "google");
     expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
     expect(textarea).toHaveValue("");
+  });
+
+  it("uses each active saved order for phone-aware paste guides and CSV without uploading the order", async () => {
+    const googleOrder = ["remark", "mobile", "douyin", ...DEFAULT_ACCOUNT_COLUMN_ORDER.google];
+    const emailOrder = ["email", "mobile", "remark", "douyin", ...DEFAULT_ACCOUNT_COLUMN_ORDER.email];
+    const googleCsv = buildPasteImportCsv([
+      "合成备注----+86 13037174892----94946893573"
+    ], "google", googleOrder);
+    const emailCsv = buildPasteImportCsv([
+      "synthetic@example.test----+852 65478974----邮箱备注----94946893574"
+    ], "email", emailOrder);
+    expect(googleCsv.split("\n")[0]).toMatch(/^"备注","手机号","抖音号","密码"/);
+    expect(googleCsv).toContain('"+86 13037174892"');
+    expect(emailCsv.split("\n")[0]).toMatch(/^"邮箱","手机号","备注","抖音号","密码"/);
+    expect(emailCsv).not.toContain("邮箱密码");
+
+    let uploadedCsv = "";
+    let uploadKeys: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") {
+        return json({ google: googleOrder, email: emailOrder });
+      }
+      if (path === "/api/imports") return json([]);
+      if (path === "/api/imports/preview") {
+        const form = init?.body as FormData;
+        uploadKeys = Array.from(form.keys()).sort();
+        uploadedCsv = await readBlob(form.get("file") as File);
+        return json({ previewId: "saved-order-preview", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201);
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+    const user = userEvent.setup();
+
+    renderPage();
+    expect(await screen.findByText(/备注、手机号、抖音号、密码/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "下载模板" })).toHaveAttribute(
+      "href",
+      "/api/imports/template?format=xlsx&accountKind=google"
+    );
+    const textarea = screen.getByRole("textbox", { name: "粘贴导入内容" });
+    await user.type(textarea, "合成备注----+86 13037174892----94946893573");
+    await user.click(within(screen.getByText("文本快捷导入").closest("form")!).getByRole("button", { name: "解析并预览" }));
+
+    await waitFor(() => expect(uploadedCsv).toContain('"备注","手机号","抖音号","密码"'));
+    expect(uploadedCsv).toContain('"合成备注","+86 13037174892","94946893573"');
+    expect(uploadKeys).toEqual(["accountKind", "file"]);
   });
 
   it("clears email import state when navigation changes the account kind in the URL", async () => {

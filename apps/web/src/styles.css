@@ -81,22 +81,23 @@ tbody tr:hover { background: #fafcff; }
 .accounts-table td { padding-inline: 6px; }
 .accounts-table .col-check { width: 38px; }
 .accounts-table .col-index { width: 42px; }
-.accounts-table .col-douyin { width: 94px; }
+.accounts-table .col-douyin { width: 90px; }
 .accounts-table .col-email { width: 108px; }
-.accounts-table .col-password { width: 88px; }
-.accounts-table .col-secuid { width: 112px; }
-.accounts-table .col-date { width: 82px; }
-.accounts-table .col-opname { width: 72px; }
-.accounts-table .col-opsecret { width: 66px; }
-.accounts-table .col-shortop { width: 132px; }
-.accounts-table .col-project { width: 50px; }
-.accounts-table .col-expiry { width: 122px; }
-.accounts-table .col-owner { width: 62px; }
-.accounts-table .col-region { width: 70px; }
-.accounts-table .col-sale { width: 74px; }
-.accounts-table .col-status { width: 64px; }
-.accounts-table .col-remark { width: 70px; }
-.accounts-table .col-actions { width: 172px; }
+.accounts-table .col-password { width: 82px; }
+.accounts-table .col-secuid { width: 104px; }
+.accounts-table .col-date { width: 78px; }
+.accounts-table .col-opname { width: 68px; }
+.accounts-table .col-opsecret { width: 64px; }
+.accounts-table .col-shortop { width: 120px; }
+.accounts-table .col-mobile { width: 84px; }
+.accounts-table .col-project { width: 48px; }
+.accounts-table .col-expiry { width: 112px; }
+.accounts-table .col-owner { width: 58px; }
+.accounts-table .col-region { width: 66px; }
+.accounts-table .col-sale { width: 70px; }
+.accounts-table .col-status { width: 60px; }
+.accounts-table .col-remark { width: 66px; }
+.accounts-table .col-actions { width: 160px; }
 .accounts-table .short-op-cell { min-width: 0; }
 .accounts-table .actions { gap: 3px; }
 .accounts-table .actions .link { font-size: 12px; }
@@ -175,6 +176,15 @@ td.check-cell {
 .dialog-body label { display: grid; gap: 8px; color: #566074; font-size: 13px; font-weight: 600; }
 .dialog-body input, .dialog-body select { height: 40px; padding: 0 11px; }
 .dialog-card footer { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 22px 22px; }
+.column-order-dialog { width: min(520px,100%); max-height: min(760px,calc(100vh - 40px)); display: flex; flex-direction: column; }
+.column-order-dialog .dialog-body { min-height: 0; overflow-y: auto; }
+.column-order-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.column-order-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.column-order-list li { display: grid; grid-template-columns: 34px minmax(0,1fr) 34px 34px; align-items: center; gap: 7px; padding: 7px; border: 1px solid var(--border); border-radius: 7px; background: #fafbfc; }
+.column-order-list button { width: 34px; min-height: 32px; padding: 0; }
+.column-order-list .drag-handle { cursor: grab; color: var(--muted); letter-spacing: -3px; }
+.column-order-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 600; }
+.column-order-footer-space { flex: 1; }
 .drawer h2, .panel-head h2, .upload-card h2, .guide-card h2, .settings-card h2 { margin-bottom: 5px; font-size: 17px; }
 .drawer header p { margin: 0; color: var(--muted); font-size: 12px; }
 .form-grid { display: grid; gap: 16px; padding: 21px 22px; overflow-y: auto; }
