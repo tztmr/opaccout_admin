@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useState } from "react";
 import { DEFAULT_ACCOUNT_COLUMN_ORDER } from "@douyin-admin/shared";
 import { AccountColumnOrderDialog } from "../features/AccountColumnOrderDialog";
 
@@ -34,6 +35,23 @@ function labels() {
   return within(screen.getByRole("list", { name: "可排序业务列" }))
     .getAllByRole("listitem")
     .map((item) => item.querySelector(".column-order-label")?.textContent);
+}
+
+function DialogHarness({ busy = false }: { busy?: boolean }) {
+  const [open, setOpen] = useState(false);
+  return <>
+    <button type="button" onClick={() => setOpen(true)}>打开表头设置</button>
+    <button type="button">背景操作</button>
+    <AccountColumnOrderDialog
+      open={open}
+      accountKind="google"
+      order={DEFAULT_ACCOUNT_COLUMN_ORDER.google}
+      busy={busy}
+      onChange={vi.fn()}
+      onSave={vi.fn()}
+      onClose={() => setOpen(false)}
+    />
+  </>;
 }
 
 describe("account column order dialog", () => {
@@ -131,5 +149,39 @@ describe("account column order dialog", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("保存顺序失败");
     expect(labels().slice(0, 3)).toEqual(["密码", "抖音号", "sec_uid"]);
+  });
+
+  it("moves focus into the modal and loops Tab within its focusable controls", async () => {
+    const user = userEvent.setup();
+    render(<DialogHarness />);
+
+    await user.click(screen.getByRole("button", { name: "打开表头设置" }));
+    const close = screen.getByRole("button", { name: "关闭表头设置" });
+    const save = screen.getByRole("button", { name: "保存" });
+    await waitFor(() => expect(close).toHaveFocus());
+
+    save.focus();
+    await user.tab();
+    expect(close).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(save).toHaveFocus();
+    expect(screen.getByRole("button", { name: "背景操作" })).not.toHaveFocus();
+  });
+
+  it("handles Escape from current busy state and restores the opening trigger focus", async () => {
+    const user = userEvent.setup();
+    const view = render(<DialogHarness />);
+    const trigger = screen.getByRole("button", { name: "打开表头设置" });
+
+    await user.click(trigger);
+    await waitFor(() => expect(screen.getByRole("button", { name: "关闭表头设置" })).toHaveFocus());
+    view.rerender(<DialogHarness busy />);
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "表头设置" })).toBeInTheDocument();
+
+    view.rerender(<DialogHarness />);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "表头设置" })).not.toBeInTheDocument();
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });

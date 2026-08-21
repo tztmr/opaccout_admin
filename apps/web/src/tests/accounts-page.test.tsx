@@ -397,6 +397,79 @@ describe("accounts page", () => {
       .toBe(googleHeaders.findIndex((header) => header.textContent === "短 OP") + 1);
   });
 
+  it("keeps column settings disabled while the initial settings request is pending or failed", async () => {
+    const pendingSettings = deferred<Response>();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") return pendingSettings.promise;
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [], page: 1, pageSize: 20, total: 0, totalPages: 1,
+        stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+    const user = userEvent.setup();
+
+    const view = renderPage();
+    const settingsButton = await screen.findByRole("button", { name: "表头设置" });
+    expect(settingsButton).toBeDisabled();
+    await user.click(settingsButton);
+    expect(screen.queryByRole("dialog", { name: "表头设置" })).not.toBeInTheDocument();
+
+    pendingSettings.resolve(new Response(JSON.stringify({
+      error: { code: "SETTINGS_FAILED", message: "读取设置失败" }, requestId: "synthetic"
+    }), { status: 500, headers: { "content-type": "application/json" } }));
+    await waitFor(() => expect(view.client.getQueryState(["account-column-orders"])?.status).toBe("error"));
+    expect(settingsButton).toBeDisabled();
+    await user.click(settingsButton);
+    expect(screen.queryByRole("dialog", { name: "表头设置" })).not.toBeInTheDocument();
+  });
+
+  it("cancels an older settings GET before PATCH so its stale result cannot replace the saved order", async () => {
+    const staleSettings = deferred<Response>();
+    let settingsGetCount = 0;
+    const staleGetSignals: AbortSignal[] = [];
+    const savedOrder = [
+      "mobile", "douyin", "email", "password", "secuid", "date", "opname",
+      "opsecret", "shortop", "project", "expiry", "owner", "region", "sale", "status", "remark"
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path === "/api/settings/account-columns") {
+        settingsGetCount += 1;
+        if (settingsGetCount === 1) return json(accountColumnOrders);
+        if (init?.signal) staleGetSignals.push(init.signal);
+        return staleSettings.promise;
+      }
+      if (path === "/api/settings/account-columns/email") return json({ order: savedOrder });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) return json({
+        items: [], page: 1, pageSize: 20, total: 0, totalPages: 1,
+        stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      throw new Error(`Unhandled request: ${path}`);
+    }));
+    const user = userEvent.setup();
+    const view = renderPage(["/accounts/email"], "email");
+    const settingsButton = await screen.findByRole("button", { name: "表头设置" });
+    await waitFor(() => expect(settingsButton).toBeEnabled());
+
+    void view.client.invalidateQueries({ queryKey: ["account-column-orders"] });
+    await waitFor(() => expect(settingsGetCount).toBe(2));
+    await user.click(settingsButton);
+    fireEvent.dragStart(screen.getByRole("listitem", { name: "手机号" }));
+    fireEvent.drop(screen.getByRole("listitem", { name: "抖音号" }));
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(screen.getAllByRole("columnheader")[2]).toHaveTextContent("手机号"));
+
+    staleSettings.resolve(json(accountColumnOrders));
+    await waitFor(() => expect(view.client.getQueryState(["account-column-orders"])?.fetchStatus).toBe("idle"));
+    expect(staleGetSignals).toHaveLength(1);
+    expect(staleGetSignals[0]?.aborted).toBe(true);
+    expect(screen.getAllByRole("columnheader")[2]).toHaveTextContent("手机号");
+  });
+
   it("never sends a client column order in the export request", async () => {
     let exportPayload: Record<string, unknown> | undefined;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

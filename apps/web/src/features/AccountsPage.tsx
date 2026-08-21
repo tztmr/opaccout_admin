@@ -248,7 +248,7 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
   });
   const columnOrdersQuery = useQuery({
     queryKey: ["account-column-orders"],
-    queryFn: () => api<AccountColumnOrders>("/api/settings/account-columns")
+    queryFn: ({ signal }) => api<AccountColumnOrders>("/api/settings/account-columns", { signal })
   });
   const activeColumnOrder = useMemo(
     () => normalizeAccountColumnOrder(accountKind, columnOrdersQuery.data?.[accountKind]),
@@ -273,6 +273,9 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
     onError:(error)=>setMessage(error instanceof Error?error.message:"保存失败")
   });
   const saveColumnOrder = useMutation({
+    onMutate: async () => {
+      await client.cancelQueries({ queryKey: ["account-column-orders"] });
+    },
     mutationFn: (order: AccountColumnId[]) => api<{ order: AccountColumnId[] }>(
       `/api/settings/account-columns/${accountKind}`,
       { method: "PATCH", body: JSON.stringify({ order }) }
@@ -428,7 +431,7 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
         <details className="date-filter"><summary>注册时间</summary><div><label>开始<input type="date" value={registeredFrom} onChange={e=>updateParams({registeredFrom:e.target.value,page:""})}/></label><label>结束<input type="date" value={registeredTo} onChange={e=>updateParams({registeredTo:e.target.value,page:""})}/></label></div></details>
         <button type="button" onClick={()=>updateParams({sortDirection:sortDirection==="asc"?"desc":"asc",page:"1"})}>{`注册时间${sortDirection==="asc"?"升序":"降序"}`}</button>
         {(search||saleStatus||accountStatus||owner||registeredFrom||registeredTo)&&<button onClick={()=>{setKeyword("");setUrlParams({}, {replace:true})}}>清空</button>}
-        <span className="toolbar-space"/><button type="button" className="button" onClick={() => setColumnOrderOpen(true)}>表头设置</button><Link className="button" to={`/imports?accountKind=${accountKind}`}><Upload size={16}/>导入 Excel</Link><button type="button" className="button" onClick={()=>void handleExport()}><Download size={16}/>{selected.size?`导出已选 ${selected.size} 条`:"导出数据"}</button>
+        <span className="toolbar-space"/><button type="button" className="button" disabled={!columnOrdersQuery.isSuccess || saveColumnOrder.isPending} onClick={() => setColumnOrderOpen(true)}>表头设置</button><Link className="button" to={`/imports?accountKind=${accountKind}`}><Upload size={16}/>导入 Excel</Link><button type="button" className="button" onClick={()=>void handleExport()}><Download size={16}/>{selected.size?`导出已选 ${selected.size} 条`:"导出数据"}</button>
       </div>
       {selected.size>0&&<div className="batch-bar"><strong>已选择 {selected.size} 条</strong><button onClick={()=>setBatchDialog({type:"status",value:DEFAULT_ACCOUNT_SALE_STATUS})}>修改售卖状态</button><button onClick={()=>setBatchDialog({type:"accountStatus",value:"normal"})}>修改账号状态</button><button onClick={()=>setBatchDialog({type:"owner",value:""})}>修改归属人</button><button onClick={()=>setBatchDialog({type:"registeredRegion",value:""})}>修改注册地区</button><button onClick={()=>setBatchDialog({type:"remark",value:""})}>批量备注</button><button disabled={recheckBusy} onClick={()=>runBatch("recheck")}><RefreshCw size={14}/>重新检测</button><button disabled={recheckBusy} onClick={()=>runBatch("recheckOp")}>重新检测 OP</button><button className="danger-text" onClick={()=>runBatch("delete")}><Trash2 size={14}/>删除</button></div>}
       <div className="table-scroll"><table className={`accounts-table${config.showEmail ? " accounts-table-email" : ""}`}><colgroup><col className="col-check"/><col className="col-index"/>{columns.map((column) => <col key={column.id} className={column.className} />)}<col className="col-actions"/></colgroup><thead><tr><th className="check-cell"><input aria-label="选择当前页" type="checkbox" checked={allChecked} onChange={()=>setSelected(allChecked?new Set():new Set(currentIds))}/></th><th className="index-cell">序号</th>{columns.map((column) => <th key={column.id}>{column.header}</th>)}<th>操作</th></tr></thead>

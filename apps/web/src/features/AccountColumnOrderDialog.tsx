@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import type { AccountColumnId, AccountKind } from "@douyin-admin/shared";
 import {
@@ -33,6 +33,13 @@ export function AccountColumnOrderDialog({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const isBusy = busy || saving;
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const busyRef = useRef(isBusy);
+  const onCloseRef = useRef(onClose);
+  busyRef.current = isBusy;
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
@@ -40,6 +47,53 @@ export function AccountColumnOrderDialog({
     setDragging(null);
     setSaveError("");
   }, [open, accountKind, order]);
+
+  useEffect(() => {
+    if (!open) return;
+    openerRef.current = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const dialog = dialogRef.current;
+    const initialFocus = closeButtonRef.current;
+    if (initialFocus && !initialFocus.disabled) initialFocus.focus();
+    else dialog?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (!busyRef.current) {
+          event.preventDefault();
+          onCloseRef.current();
+        }
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ));
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0]!;
+      const last = focusable[focusable.length - 1]!;
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !dialog.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !dialog.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      const opener = openerRef.current;
+      openerRef.current = null;
+      if (opener?.isConnected) opener.focus();
+    };
+  }, [open]);
 
   if (!open) return null;
 
@@ -80,8 +134,8 @@ export function AccountColumnOrderDialog({
   return <div className="overlay overlay-center" onMouseDown={(event) => {
     if (event.target === event.currentTarget && !isBusy) onClose();
   }}>
-    <div className="dialog-card column-order-dialog" role="dialog" aria-modal="true" aria-labelledby="column-order-title">
-      <header><div><h2 id="column-order-title">表头设置</h2><p>{accountKind === "email" ? "抖音邮箱号" : "抖音谷歌账号"}业务列顺序</p></div><button type="button" className="icon-button" aria-label="关闭表头设置" disabled={isBusy} onClick={onClose}><X /></button></header>
+    <div ref={dialogRef} tabIndex={-1} className="dialog-card column-order-dialog" role="dialog" aria-modal="true" aria-labelledby="column-order-title">
+      <header><div><h2 id="column-order-title">表头设置</h2><p>{accountKind === "email" ? "抖音邮箱号" : "抖音谷歌账号"}业务列顺序</p></div><button ref={closeButtonRef} type="button" className="icon-button" aria-label="关闭表头设置" disabled={isBusy} onClick={onClose}><X /></button></header>
       <div className="dialog-body">
         <p className="column-order-help">拖动调整顺序，触屏或键盘可使用上移、下移按钮。</p>
         <ul className="column-order-list" aria-label="可排序业务列">
