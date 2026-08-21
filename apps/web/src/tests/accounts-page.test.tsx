@@ -341,7 +341,7 @@ describe("accounts page", () => {
     expect(updated).toHaveLength(1);
   });
 
-  it("applies a saved Email order immediately and keeps Google independent", async () => {
+  it("applies a saved Email order, restores trigger focus, and keeps Google independent", async () => {
     const account = {
       ...accountFixture(51),
       accountKind: "email" as const,
@@ -349,6 +349,7 @@ describe("accounts page", () => {
       mobile: "+852 65478974"
     };
     let savedOrder: string[] | undefined;
+    const saveResponse = deferred<Response>();
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       if (path === "/api/settings/account-columns") return json(accountColumnOrders);
@@ -359,7 +360,7 @@ describe("accounts page", () => {
       });
       if (path === "/api/settings/account-columns/email") {
         savedOrder = JSON.parse(String(init?.body)).order;
-        return json({ order: savedOrder });
+        return saveResponse.promise;
       }
       throw new Error(`Unhandled request: ${path}`);
     });
@@ -368,15 +369,22 @@ describe("accounts page", () => {
 
     const view = renderPage(["/accounts/email"], "email");
     await screen.findByText(account.email);
-    await user.click(screen.getByRole("button", { name: "表头设置" }));
+    const settingsButton = screen.getByRole("button", { name: "表头设置" });
+    await user.click(settingsButton);
     fireEvent.dragStart(screen.getByRole("listitem", { name: "手机号" }));
     fireEvent.drop(screen.getByRole("listitem", { name: "抖音号" }));
     await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("button", { name: "保存中…" })).toBeDisabled();
+    expect(settingsButton).toBeEnabled();
+    saveResponse.resolve(json({ order: savedOrder }));
 
     await waitFor(() => expect(savedOrder).toEqual([
       "mobile", "douyin", "email", "password", "secuid", "date", "opname",
       "opsecret", "shortop", "project", "expiry", "owner", "region", "sale", "status", "remark"
     ]));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "表头设置" })).not.toBeInTheDocument());
+    expect(await screen.findByText("表头顺序已保存")).toBeInTheDocument();
+    expect(settingsButton).toHaveFocus();
     expect(screen.getAllByRole("columnheader").slice(0, 5).map((node) => node.textContent))
       .toEqual(["", "序号", "手机号", "抖音号", "邮箱"]);
     expect(Array.from(document.querySelectorAll("colgroup col")).slice(0, 5).map((node) => node.className))
