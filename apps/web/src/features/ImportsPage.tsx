@@ -79,8 +79,9 @@ export function ImportsPage() {
   const [dragActive, setDragActive] = useState(false);
   const [pasteText, setPasteText] = useState("");
   const [fileInputKey, setFileInputKey] = useState(0);
+  const [overridePendingCount, setOverridePendingCount] = useState(0);
   const previewRequestVersion = useRef(0);
-  const operationVersion = useRef(0);
+  const overrideRequestVersion = useRef(0);
   const currentPreview = useRef<Preview | null>(null);
   const accountKindVersion = useRef(0);
   const previousAccountKind = useRef(accountKind);
@@ -95,7 +96,6 @@ export function ImportsPage() {
       accountKind: AccountKind;
       accountKindVersion: number;
       requestVersion: number;
-      operationVersion: number;
     }) => {
       const form = new FormData();
       form.append("file", file);
@@ -105,8 +105,7 @@ export function ImportsPage() {
     onSuccess: (value, variables) => {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
-        variables.requestVersion === previewRequestVersion.current &&
-        variables.operationVersion === operationVersion.current
+        variables.requestVersion === previewRequestVersion.current
       ) {
         currentPreview.current = value;
         setPreview(value);
@@ -116,8 +115,7 @@ export function ImportsPage() {
     onError: (error, variables) => {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
-        variables.requestVersion === previewRequestVersion.current &&
-        variables.operationVersion === operationVersion.current
+        variables.requestVersion === previewRequestVersion.current
       ) {
         setNotice(error instanceof Error ? error.message : "文件解析失败");
       }
@@ -129,7 +127,6 @@ export function ImportsPage() {
       duplicateStrategy: "skip" | "update";
       accountKindVersion: number;
       previewRequestVersion: number;
-      operationVersion: number;
     }) => api<{ jobId: string }>("/api/imports/execute", {
       method: "POST",
       body: JSON.stringify({ previewId, duplicateStrategy })
@@ -138,7 +135,6 @@ export function ImportsPage() {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
         variables.previewRequestVersion === previewRequestVersion.current &&
-        variables.operationVersion === operationVersion.current &&
         currentPreview.current?.previewId === variables.previewId
       ) {
         currentPreview.current = null;
@@ -151,26 +147,57 @@ export function ImportsPage() {
       if (
         variables.accountKindVersion === accountKindVersion.current &&
         variables.previewRequestVersion === previewRequestVersion.current &&
-        variables.operationVersion === operationVersion.current &&
         currentPreview.current?.previewId === variables.previewId
       ) {
         setNotice(error instanceof Error ? error.message : "提交导入失败");
       }
     }
   });
+  const dateOverride = useMutation({
+    mutationFn: ({ items }: {
+      items: Array<{ douyinId: string; registeredAt: string }>;
+      accountKindVersion: number;
+      requestVersion: number;
+    }) => api<{ matched: number; updated: number }>("/api/accounts/batch-override-dates", {
+      method: "POST",
+      body: JSON.stringify({ items })
+    }),
+    onSuccess: (value, variables) => {
+      if (
+        variables.accountKindVersion === accountKindVersion.current &&
+        variables.requestVersion === overrideRequestVersion.current
+      ) {
+        setNotice(`时间覆盖完成：匹配到 ${value.matched} 个账号，成功更新 ${value.updated} 个`);
+        setPasteText("");
+      }
+    },
+    onError: (error, variables) => {
+      if (
+        variables.accountKindVersion === accountKindVersion.current &&
+        variables.requestVersion === overrideRequestVersion.current
+      ) {
+        setNotice(error instanceof Error ? error.message : "时间覆盖失败");
+      }
+    },
+    onSettled: (_value, _error, variables) => {
+      if (variables.accountKindVersion === accountKindVersion.current) {
+        setOverridePendingCount((count) => Math.max(0, count - 1));
+      }
+    }
+  });
+  const overridePending = overridePendingCount > 0;
   const handleFile = (file: File | null | undefined) => {
+    if (execute.isPending || overridePending) return;
     if (file instanceof File && file.size) {
       currentPreview.current = null;
       setPreview(null);
       setNotice("");
       execute.reset();
-      const nextOperationVersion = ++operationVersion.current;
       upload.mutate({
         file,
         accountKind,
         accountKindVersion: accountKindVersion.current,
-        requestVersion: ++previewRequestVersion.current,
-        operationVersion: nextOperationVersion
+        requestVersion: ++previewRequestVersion.current
       });
     }
   };
@@ -184,15 +211,17 @@ export function ImportsPage() {
     previousAccountKind.current = accountKind;
     accountKindVersion.current += 1;
     previewRequestVersion.current += 1;
-    operationVersion.current += 1;
+    overrideRequestVersion.current += 1;
     currentPreview.current = null;
     setPreview(null);
     setPasteText("");
     setNotice("");
     setDragActive(false);
     setFileInputKey((key) => key + 1);
+    setOverridePendingCount(0);
     upload.reset();
     execute.reset();
+    dateOverride.reset();
   }, [accountKind]);
 
   useEffect(() => {
@@ -221,6 +250,7 @@ export function ImportsPage() {
   const handlePasteSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!pasteText.trim()) return;
+    if (execute.isPending || upload.isPending) return;
 
     const lines = pasteText.split('\n').map(line => line.trim()).filter(Boolean);
 
@@ -235,28 +265,16 @@ export function ImportsPage() {
         // Or we can just let the backend API call normalizedDate!
         return { douyinId: douyinId ?? "", registeredAt: rawDate ?? "" };
       });
-      // We will need backend to parse the raw date.
-      const submittedAccountKindVersion = accountKindVersion.current;
-      const submittedOperationVersion = ++operationVersion.current;
-      api<{ matched: number; updated: number }>("/api/accounts/batch-override-dates", {
-        method: "POST",
-        body: JSON.stringify({ items })
-      }).then(res => {
-        if (
-          submittedAccountKindVersion !== accountKindVersion.current ||
-          submittedOperationVersion !== operationVersion.current
-        ) return;
-        setNotice(`时间覆盖完成：匹配到 ${res.matched} 个账号，成功更新 ${res.updated} 个`);
-        setPasteText("");
-      }).catch(err => {
-        if (
-          submittedAccountKindVersion !== accountKindVersion.current ||
-          submittedOperationVersion !== operationVersion.current
-        ) return;
-        setNotice(err instanceof Error ? err.message : "时间覆盖失败");
+      setOverridePendingCount((count) => count + 1);
+      dateOverride.mutate({
+        items,
+        accountKindVersion: accountKindVersion.current,
+        requestVersion: ++overrideRequestVersion.current
       });
       return;
     }
+
+    if (overridePending) return;
 
     const csvContent = buildPasteImportCsv(lines, accountKind);
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv' });
@@ -278,6 +296,10 @@ export function ImportsPage() {
     setDragActive(false);
     handleFile(event.dataTransfer.files?.[0]);
   };
+  const pasteLines = pasteText.split('\n').map((line) => line.trim()).filter(Boolean);
+  const pasteIsDateOverride = pasteLines.length > 0 && pasteLines.every((line) => line.split('----').length === 2);
+  const fileActionPending = upload.isPending || execute.isPending || overridePending;
+  const pasteActionPending = upload.isPending || execute.isPending || (!pasteIsDateOverride && overridePending);
 
   return <section>
     <header className="page-head"><div><h1>导入记录</h1><p>批量导入 Excel、XLS 或 CSV，并追踪后台处理结果</p></div><div className="toolbar"><label><span>账号类型</span><select aria-label="账号类型" value={accountKind} onChange={(event) => handleAccountKindChange(event.target.value === "email" ? "email" : "google")}><option value="google">抖音谷歌账号</option><option value="email">抖音邮箱号</option></select></label><a className="button" href={`/api/imports/template?format=xlsx&accountKind=${accountKind}`}><Download size={16}/>下载模板</a></div></header>
@@ -287,8 +309,8 @@ export function ImportsPage() {
         <div className="upload-icon"><UploadCloud size={28}/></div>
         <h2>上传账号文件</h2>
         <p>文件最大 10 MB。OP卡密只在服务端加密暂存，预览不显示明文。支持把文件直接拖到这里。</p>
-        <label className="file-picker"><input key={fileInputKey} name="file" type="file" accept=".xlsx,.xls,.csv" required/><span>选择文件</span></label>
-        <button className="primary" disabled={upload.isPending}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
+        <label className="file-picker"><input key={fileInputKey} name="file" type="file" accept=".xlsx,.xls,.csv" required disabled={fileActionPending}/><span>选择文件</span></label>
+        <button className="primary" disabled={fileActionPending}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
       </form>
       <form className="upload-card paste-card" onSubmit={handlePasteSubmit}>
         <div className="upload-icon" style={{ background: '#fdf3ed', color: '#e87c47' }}><FileText size={28}/></div>
@@ -302,7 +324,7 @@ export function ImportsPage() {
           placeholder={accountKind === "email" ? "抖音号----邮箱----注册时间----OP名称----OP卡密----归属人----注册地区----售卖状态----备注\n（或仅输入 抖音号----注册时间 以覆盖时间）" : "抖音号----注册时间----OP名称----OP卡密----归属人----注册地区----售卖状态----备注\n（或仅输入 抖音号----注册时间 以覆盖时间）"}
           required
         />
-        <button className="primary" disabled={upload.isPending || !pasteText.trim()}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
+        <button className="primary" disabled={pasteActionPending || !pasteText.trim()}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
       </form>
       <div className="guide-card">
         <FileSpreadsheet size={25}/><h2>表头要求</h2>
@@ -313,7 +335,7 @@ export function ImportsPage() {
     {preview && <div className="panel preview-panel">
       <div className="panel-head"><div><h2>导入预览</h2><p>{accountKindLabels[accountKind]} · 共 {preview.totalRows} 行，可导入 {preview.validRows} 行，错误 {preview.errors.length} 行</p></div></div>
       {preview.errors.length > 0 && <div className="error-list"><AlertTriangle size={18}/><div>{preview.errors.slice(0, 8).map((item) => <p key={`${item.row}-${item.field}-${item.message}`}>第 {item.row} 行{item.field ? ` · ${item.field}` : ""}：{item.message}</p>)}</div></div>}
-      <div className="preview-options"><label><input type="radio" checked={strategy==="skip"} onChange={()=>setStrategy("skip")}/>重复抖音号跳过</label><label><input type="radio" checked={strategy==="update"} onChange={()=>setStrategy("update")}/>重复抖音号更新</label><button className="primary" disabled={!preview.validRows||execute.isPending} onClick={()=>execute.mutate({ previewId: preview.previewId, duplicateStrategy: strategy, accountKindVersion: accountKindVersion.current, previewRequestVersion: previewRequestVersion.current, operationVersion: operationVersion.current })}>{execute.isPending ? "提交中…" : `确认导入 ${preview.validRows} 行`}</button></div>
+      <div className="preview-options"><label><input type="radio" checked={strategy==="skip"} onChange={()=>setStrategy("skip")}/>重复抖音号跳过</label><label><input type="radio" checked={strategy==="update"} onChange={()=>setStrategy("update")}/>重复抖音号更新</label><button className="primary" disabled={!preview.validRows||execute.isPending||overridePending} onClick={()=>execute.mutate({ previewId: preview.previewId, duplicateStrategy: strategy, accountKindVersion: accountKindVersion.current, previewRequestVersion: previewRequestVersion.current })}>{execute.isPending ? "提交中…" : `确认导入 ${preview.validRows} 行`}</button></div>
     </div>}
     <div className="panel">
       <div className="panel-head"><div><h2>历史任务</h2><p>最近 100 次导入</p></div></div>

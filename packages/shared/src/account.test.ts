@@ -3,11 +3,27 @@ import {
   AccountPatchSchema,
   AccountInputSchema,
   AccountListQuerySchema,
+  EmailAddressSchema,
   ACCOUNT_STATUS_LABELS,
   SALE_STATUS_LABELS
 } from "./account";
 
 describe("AccountInputSchema", () => {
+  it("shares the strict email address schema used by account input and patches", () => {
+    expect(EmailAddressSchema.safeParse("mail@example.test").success).toBe(true);
+    expect(EmailAddressSchema.safeParse("a@b.c").success).toBe(false);
+    expect(EmailAddressSchema.safeParse("a,b@example.com").success).toBe(false);
+    expect(() => AccountInputSchema.parse({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      accountKind: "email",
+      email: "a@b.c"
+    })).toThrow("邮箱格式不正确");
+    expect(() => AccountPatchSchema.parse({ email: "a,b@example.com" })).toThrow("邮箱格式不正确");
+  });
+
   it("defaults Google accounts and normalizes email account addresses", () => {
     const base = {
       douyinId: "94946893573",

@@ -10,6 +10,7 @@ import {
   ACCOUNT_STATUS_LABELS,
   DEFAULT_OP_PROJECT,
   DEFAULT_REGISTERED_REGION,
+  EmailAddressSchema,
   OP_PROJECTS,
   PUBLIC_OP_ORIGIN,
   SALE_STATUS_LABELS
@@ -437,13 +438,13 @@ function AccountDrawer({state,accountKind,owners,busy,close,submit}:{state:{mode
   const validateEmail = (value: string) => {
     const email = value.trim();
     if (!email) return "邮箱不能为空";
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? "" : "邮箱格式不正确";
+    return EmailAddressSchema.safeParse(email).success ? "" : "邮箱格式不正确";
   };
   const check=async(form:HTMLFormElement)=>{const id=String(new FormData(form).get("douyinId")||"");setChecking(true);try{setDetected(await api("/api/accounts/check-douyin",{method:"POST",body:JSON.stringify({douyinId:id})}))}finally{setChecking(false)}};
   const onSubmit=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const d=new FormData(event.currentTarget);const email=String(d.get("email")||"").trim();if(isEmailPage){const error=validateEmail(email);if(error){setEmailError(error);return;}}if(!detected&&state.mode==="create")return;const opSecret=String(d.get("opSecret")||"");const accountPassword=String(d.get("accountPassword")??"");const value:AccountSubmitValue={douyinId:String(d.get("douyinId")),registeredAt:String(d.get("registeredAt")),opName:String(d.get("opName")),opProject:String(d.get("opProject")||DEFAULT_OP_PROJECT) as AccountFormValue["opProject"],owner:String(d.get("owner")),registeredRegion:String(d.get("registeredRegion")||DEFAULT_REGISTERED_REGION),saleStatus:String(d.get("saleStatus")) as AccountFormValue["saleStatus"],remark:String(d.get("remark"))};if(isEmailPage)value.email=email;if(opSecret)value.opSecret=opSecret;if(state.mode === "create" || accountPassword !== state.value.accountPassword)value.accountPassword=accountPassword;submit(value)};
   return <div className="overlay" onMouseDown={e=>{if(e.target===e.currentTarget)close()}}><form className="drawer" onSubmit={onSubmit}><header><div><h2>{state.mode==="create" ? (isEmailPage ? "新增邮箱号" : "新增谷歌账号") : "编辑账号"}</h2><p>派生字段由服务端自动计算</p></div><button type="button" className="icon-button" onClick={close}><X/></button></header>
     <div className="form-grid"><label>抖音号<div className="input-action"><input name="douyinId" defaultValue={state.value.douyinId} required/><button type="button" onClick={e=>check(e.currentTarget.form!)} disabled={checking}>{checking?"检测中":"检测"}</button></div></label>
-    {isEmailPage&&<label>邮箱<input type="email" name="email" defaultValue={state.value.email} required maxLength={254} aria-invalid={Boolean(emailError)} aria-describedby="account-email-error" onInvalid={event=>setEmailError(validateEmail(event.currentTarget.value))} onInput={event=>{if(emailError)setEmailError(validateEmail(event.currentTarget.value))}}/>{emailError&&<p id="account-email-error" role="alert">{emailError}</p>}</label>}
+    {isEmailPage&&<label>邮箱<input type="email" name="email" defaultValue={state.value.email} required maxLength={254} aria-invalid={Boolean(emailError)} aria-describedby="account-email-error" onInvalid={event=>setEmailError(event.currentTarget.validity.valueMissing ? "邮箱不能为空" : "邮箱格式不正确")} onInput={event=>{if(emailError)setEmailError(validateEmail(event.currentTarget.value))}}/>{emailError&&<p id="account-email-error" role="alert">{emailError}</p>}</label>}
     {detected&&<div className="detected">sec_uid：{detected.secUid}<br/>账号状态：{ACCOUNT_STATUS_LABELS[detected.accountStatus as keyof typeof ACCOUNT_STATUS_LABELS]??detected.accountStatus}</div>}
     <label>注册时间<input type="date" name="registeredAt" defaultValue={state.value.registeredAt} required/></label><label>OP名称<input name="opName" defaultValue={state.value.opName} maxLength={100}/></label><label>项目<select name="opProject" defaultValue={state.value.opProject}>{Object.values(OP_PROJECTS).map((project)=><option key={project.key} value={project.key}>{project.name}</option>)}</select></label>
     <label>OP卡密<input name="opSecret" defaultValue="" required={state.mode==="create"} placeholder={state.mode==="edit"?"不修改请留空":"末段必须为10位时间戳"}/></label><label>密码<input name="accountPassword" defaultValue={state.value.accountPassword} maxLength={4096}/></label><label>归属人<input name="owner" list="owner-options" defaultValue={state.value.owner} required/><datalist id="owner-options">{owners.map(value=><option key={value} value={value}/>)}</datalist></label>

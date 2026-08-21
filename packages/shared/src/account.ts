@@ -21,6 +21,7 @@ export const SaleStatusSchema = z.enum(SALE_STATUSES);
 export const AccountStatusSchema = z.enum(ACCOUNT_STATUSES);
 export const ACCOUNT_KINDS = ["google", "email"] as const;
 export const AccountKindSchema = z.enum(ACCOUNT_KINDS);
+export const EmailAddressSchema = z.string().trim().email("邮箱格式不正确").max(254);
 
 export type SaleStatus = z.infer<typeof SaleStatusSchema>;
 export type AccountStatus = z.infer<typeof AccountStatusSchema>;
@@ -70,7 +71,7 @@ export const AccountInputSchema = AccountEditableFieldsSchema
     if (value.accountKind !== "email") return;
     if (!value.email) {
       context.addIssue({ code: "custom", path: ["email"], message: "邮箱不能为空" });
-    } else if (!z.string().email().safeParse(value.email).success) {
+    } else if (!EmailAddressSchema.safeParse(value.email).success) {
       context.addIssue({ code: "custom", path: ["email"], message: "邮箱格式不正确" });
     }
   })
@@ -83,7 +84,7 @@ export const AccountPatchSchema = AccountEditableFieldsSchema.partial()
   .extend({
     email: z.union([
       z.literal(""),
-      z.string().trim().email("邮箱格式不正确").max(254)
+      EmailAddressSchema
     ]).optional()
   })
   .strict();

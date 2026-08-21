@@ -173,6 +173,19 @@ describe("accounts page", () => {
     await user.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByText("邮箱格式不正确")).toBeInTheDocument();
     expect(updated).toHaveLength(1);
+
+    await user.clear(emailInput);
+    await user.type(emailInput, "a@b.c");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("邮箱格式不正确")).toBeInTheDocument();
+    expect(updated).toHaveLength(1);
+
+    await user.clear(emailInput);
+    await user.type(emailInput, "a,b@example.com");
+    expect(emailInput).toBeInvalid();
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByText("邮箱格式不正确")).toBeInTheDocument();
+    expect(updated).toHaveLength(1);
   });
 
   it("renders semantic columns and preserves full values as truncation titles", async () => {

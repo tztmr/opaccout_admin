@@ -336,7 +336,7 @@ describe("imports page", () => {
     expect(screen.queryByText("导入任务已提交，将在后台继续处理")).not.toBeInTheDocument();
   });
 
-  it("keeps a newer preview when an earlier execute succeeds in the same account kind", async () => {
+  it("blocks a new preview while an earlier execute succeeds", async () => {
     const executeResponse = deferred<Response>();
     let previewCalls = 0;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -371,18 +371,18 @@ describe("imports page", () => {
     fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
       dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] }
     });
-    await screen.findByText(/共 2 行，可导入 2 行/);
+    expect(previewCalls).toBe(1);
 
     await act(async () => {
       executeResponse.resolve(json({ jobId: "email-job-a" }, 202));
       await Promise.resolve();
     });
 
-    expect(screen.getByText(/共 2 行，可导入 2 行/)).toBeInTheDocument();
-    expect(screen.queryByText("导入任务已提交，将在后台继续处理")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
+    expect(screen.getByText("导入任务已提交，将在后台继续处理")).toBeInTheDocument();
   });
 
-  it("keeps a newer preview when an earlier execute fails in the same account kind", async () => {
+  it("blocks a new preview while an earlier execute fails", async () => {
     const executeResponse = deferred<Response>();
     let previewCalls = 0;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -417,20 +417,19 @@ describe("imports page", () => {
     fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
       dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] }
     });
-    await screen.findByText(/共 2 行，可导入 2 行/);
+    expect(previewCalls).toBe(1);
 
     await act(async () => {
       executeResponse.reject(new Error("旧导入失败"));
       await Promise.resolve();
     });
 
-    expect(screen.getByText(/共 2 行，可导入 2 行/)).toBeInTheDocument();
-    expect(screen.queryByText("旧导入失败")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "导入预览" })).toBeInTheDocument();
+    expect(screen.getByText("旧导入失败")).toBeInTheDocument();
   });
 
-  it("removes the submitted preview when its replacement preview fails before the old execute succeeds", async () => {
+  it("keeps a submitted preview isolated from a blocked replacement while execute succeeds", async () => {
     const executeResponse = deferred<Response>();
-    const replacementPreview = deferred<Response>();
     let previewCalls = 0;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input);
@@ -440,7 +439,7 @@ describe("imports page", () => {
         if (previewCalls === 1) {
           return Promise.resolve(json({ previewId: "email-preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
         }
-        return replacementPreview.promise;
+        return Promise.resolve(json({ previewId: "email-preview-b", totalRows: 2, validRows: 2, errors: [], rows: [] }, 201));
       }
       if (path === "/api/imports/execute") return executeResponse.promise;
       return Promise.reject(new Error(`Unhandled request: ${path}`));
@@ -459,12 +458,7 @@ describe("imports page", () => {
     ));
 
     fireEvent.drop(uploadForm, { dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] } });
-    await waitFor(() => expect(previewCalls).toBe(2));
-    await act(async () => {
-      replacementPreview.resolve(json({ error: { code: "IMPORT_PARSE_FAILED", message: "B解析失败" }, requestId: "test" }, 500));
-      await Promise.resolve();
-    });
-    expect(await screen.findByText("B解析失败")).toBeInTheDocument();
+    expect(previewCalls).toBe(1);
 
     await act(async () => {
       executeResponse.resolve(json({ jobId: "email-job-a" }, 202));
@@ -473,13 +467,11 @@ describe("imports page", () => {
 
     expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /确认导入/ })).not.toBeInTheDocument();
-    expect(screen.getByText("B解析失败")).toBeInTheDocument();
-    expect(screen.queryByText("导入任务已提交，将在后台继续处理")).not.toBeInTheDocument();
+    expect(screen.getByText("导入任务已提交，将在后台继续处理")).toBeInTheDocument();
   });
 
-  it("removes the submitted preview when its replacement preview fails before the old execute errors", async () => {
+  it("keeps a submitted preview actionable after a blocked replacement and execute error", async () => {
     const executeResponse = deferred<Response>();
-    const replacementPreview = deferred<Response>();
     let previewCalls = 0;
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input);
@@ -489,7 +481,7 @@ describe("imports page", () => {
         if (previewCalls === 1) {
           return Promise.resolve(json({ previewId: "email-preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
         }
-        return replacementPreview.promise;
+        return Promise.resolve(json({ previewId: "email-preview-b", totalRows: 2, validRows: 2, errors: [], rows: [] }, 201));
       }
       if (path === "/api/imports/execute") return executeResponse.promise;
       return Promise.reject(new Error(`Unhandled request: ${path}`));
@@ -508,22 +500,16 @@ describe("imports page", () => {
     ));
 
     fireEvent.drop(uploadForm, { dataTransfer: { files: [new File(["b"], "email-b.csv", { type: "text/csv" })] } });
-    await waitFor(() => expect(previewCalls).toBe(2));
-    await act(async () => {
-      replacementPreview.resolve(json({ error: { code: "IMPORT_PARSE_FAILED", message: "B解析失败" }, requestId: "test" }, 500));
-      await Promise.resolve();
-    });
-    expect(await screen.findByText("B解析失败")).toBeInTheDocument();
+    expect(previewCalls).toBe(1);
 
     await act(async () => {
       executeResponse.reject(new Error("旧导入失败"));
       await Promise.resolve();
     });
 
-    expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /确认导入/ })).not.toBeInTheDocument();
-    expect(screen.getByText("B解析失败")).toBeInTheDocument();
-    expect(screen.queryByText("旧导入失败")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "导入预览" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认导入 1 行" })).toBeEnabled();
+    expect(screen.getByText("旧导入失败")).toBeInTheDocument();
   });
 
   it("ignores an old date-override success after navigation changes the account kind", async () => {
@@ -558,7 +544,7 @@ describe("imports page", () => {
     expect(screen.queryByText(/时间覆盖完成/)).not.toBeInTheDocument();
   });
 
-  it("ignores an old date-override failure after a new upload starts", async () => {
+  it("prevents a new upload while a date override is pending and keeps its failure current", async () => {
     const overrideResponse = deferred<Response>();
     const previewResponse = deferred<Response>();
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
@@ -585,18 +571,14 @@ describe("imports page", () => {
     fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
       dataTransfer: { files: [new File(["new"], "new-import.csv", { type: "text/csv" })] }
     });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
-      "/api/imports/preview",
-      expect.objectContaining({ method: "POST" })
-    ));
-    await user.type(textarea, "new paste after upload");
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain("/api/imports/preview");
     await act(async () => {
-      overrideResponse.reject(new Error("旧时间覆盖失败"));
+      overrideResponse.reject(new Error("时间覆盖失败"));
       await Promise.resolve();
     });
 
-    expect(textarea).toHaveValue("94946893573----2026-07-27new paste after upload");
-    expect(screen.queryByText("旧时间覆盖失败")).not.toBeInTheDocument();
+    expect(textarea).toHaveValue("94946893573----2026-07-27");
+    expect(screen.getByText("时间覆盖失败")).toBeInTheDocument();
   });
 
   it("keeps only the latest same-kind date override result", async () => {
@@ -640,6 +622,156 @@ describe("imports page", () => {
     expect(textarea).toHaveValue("fresh paste");
     expect(screen.getByText("时间覆盖完成：匹配到 2 个账号，成功更新 2 个")).toBeInTheDocument();
     expect(screen.queryByText("时间覆盖完成：匹配到 1 个账号，成功更新 1 个")).not.toBeInTheDocument();
+  });
+
+  it("blocks a date override during execute and consumes the submitted preview on success", async () => {
+    const executeResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") return Promise.resolve(json({ previewId: "preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
+      if (path === "/api/imports/execute") return executeResponse.promise;
+      if (path === "/api/accounts/batch-override-dates") return Promise.resolve(json({ matched: 1, updated: 1 }));
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["preview"], "preview.csv", { type: "text/csv" })] }
+    });
+    const confirm = await screen.findByRole("button", { name: "确认导入 1 行" });
+    await user.click(confirm);
+    await waitFor(() => expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((path) => path === "/api/imports/execute")).toHaveLength(1));
+
+    const textarea = screen.getByRole("textbox", { name: "粘贴导入内容" });
+    const pasteForm = screen.getByText("文本快捷导入").closest("form")!;
+    await user.type(textarea, "94946893573----2026-07-27");
+    expect(within(pasteForm).getByRole("button", { name: "解析并预览" })).toBeDisabled();
+    await user.click(within(pasteForm).getByRole("button", { name: "解析并预览" }));
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain("/api/accounts/batch-override-dates");
+
+    await act(async () => {
+      executeResponse.resolve(json({ jobId: "job-a" }, 202));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("heading", { name: "导入预览" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /确认导入/ })).not.toBeInTheDocument();
+    expect(screen.getByText("导入任务已提交，将在后台继续处理")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([input]) => String(input)).filter((path) => path === "/api/imports/execute")).toHaveLength(1);
+  });
+
+  it("blocks a date override during execute and keeps a failed preview actionable", async () => {
+    const executeResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") return Promise.resolve(json({ previewId: "preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
+      if (path === "/api/imports/execute") return executeResponse.promise;
+      if (path === "/api/accounts/batch-override-dates") return Promise.resolve(json({ matched: 1, updated: 1 }));
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["preview"], "preview.csv", { type: "text/csv" })] }
+    });
+    await user.click(await screen.findByRole("button", { name: "确认导入 1 行" }));
+    const textarea = screen.getByRole("textbox", { name: "粘贴导入内容" });
+    const pasteForm = screen.getByText("文本快捷导入").closest("form")!;
+    await user.type(textarea, "94946893573----2026-07-27");
+    expect(within(pasteForm).getByRole("button", { name: "解析并预览" })).toBeDisabled();
+
+    await act(async () => {
+      executeResponse.reject(new Error("提交导入失败"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "导入预览" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认导入 1 行" })).toBeEnabled();
+    expect(screen.getByText("提交导入失败")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain("/api/accounts/batch-override-dates");
+  });
+
+  it("blocks execute during a date override and retains its preview after override success", async () => {
+    const overrideResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") return Promise.resolve(json({ previewId: "preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
+      if (path === "/api/accounts/batch-override-dates") return overrideResponse.promise;
+      if (path === "/api/imports/execute") return Promise.resolve(json({ jobId: "job-a" }, 202));
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["preview"], "preview.csv", { type: "text/csv" })] }
+    });
+    const confirm = await screen.findByRole("button", { name: "确认导入 1 行" });
+    const textarea = screen.getByRole("textbox", { name: "粘贴导入内容" });
+    const pasteForm = screen.getByText("文本快捷导入").closest("form")!;
+    await user.type(textarea, "94946893573----2026-07-27");
+    await user.click(within(pasteForm).getByRole("button", { name: "解析并预览" }));
+    await waitFor(() => expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain("/api/accounts/batch-override-dates"));
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain("/api/imports/execute");
+
+    await act(async () => {
+      overrideResponse.resolve(json({ matched: 1, updated: 1 }));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "导入预览" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认导入 1 行" })).toBeEnabled();
+    expect(screen.getByText("时间覆盖完成：匹配到 1 个账号，成功更新 1 个")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain("/api/imports/execute");
+  });
+
+  it("blocks execute during a date override and retains its preview after override failure", async () => {
+    const overrideResponse = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/imports") return Promise.resolve(json([]));
+      if (path === "/api/imports/preview") return Promise.resolve(json({ previewId: "preview-a", totalRows: 1, validRows: 1, errors: [], rows: [] }, 201));
+      if (path === "/api/accounts/batch-override-dates") return overrideResponse.promise;
+      if (path === "/api/imports/execute") return Promise.resolve(json({ jobId: "job-a" }, 202));
+      return Promise.reject(new Error(`Unhandled request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+    const uploadCard = await screen.findByText("上传账号文件");
+    fireEvent.drop(uploadCard.closest("form") ?? uploadCard, {
+      dataTransfer: { files: [new File(["preview"], "preview.csv", { type: "text/csv" })] }
+    });
+    const confirm = await screen.findByRole("button", { name: "确认导入 1 行" });
+    const textarea = screen.getByRole("textbox", { name: "粘贴导入内容" });
+    const pasteForm = screen.getByText("文本快捷导入").closest("form")!;
+    await user.type(textarea, "94946893573----2026-07-27");
+    await user.click(within(pasteForm).getByRole("button", { name: "解析并预览" }));
+    expect(confirm).toBeDisabled();
+
+    await act(async () => {
+      overrideResponse.reject(new Error("时间覆盖失败"));
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "导入预览" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "确认导入 1 行" })).toBeEnabled();
+    expect(screen.getByText("时间覆盖失败")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).not.toContain("/api/imports/execute");
   });
 
   it("labels historical import jobs without a kind as Google accounts", async () => {
