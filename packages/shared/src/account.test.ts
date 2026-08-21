@@ -9,6 +9,36 @@ import {
 } from "./account";
 
 describe("AccountInputSchema", () => {
+  const validInput = {
+    douyinId: "94946893573",
+    registeredAt: "2026-07-27",
+    opName: "",
+    opSecret: "a|b|1782303418",
+    owner: "小王",
+    saleStatus: "unsold" as const,
+    remark: ""
+  };
+
+  it.each([
+    [" +86   13037174892 ", "+86 13037174892"],
+    ["+852 65478974", "+852 65478974"],
+    ["", ""]
+  ])("normalizes mobile %s", (mobile, expected) => {
+    const parsed = AccountInputSchema.parse({ ...validInput, mobile });
+    expect(parsed.mobile).toBe(expected);
+  });
+
+  it.each(["86 13037174892", "+86-13037174892", "+0 12345678", "+852 "])(
+    "rejects invalid mobile %s",
+    (mobile) => {
+      expect(AccountInputSchema.safeParse({ ...validInput, mobile }).success).toBe(false);
+    }
+  );
+
+  it("defaults historical input mobile to empty", () => {
+    expect(AccountInputSchema.parse(validInput).mobile).toBe("");
+  });
+
   it("shares the strict email address schema used by account input and patches", () => {
     expect(EmailAddressSchema.safeParse("mail@example.test").success).toBe(true);
     expect(EmailAddressSchema.safeParse("a@b.c").success).toBe(false);

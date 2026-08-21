@@ -22,6 +22,18 @@ export const AccountStatusSchema = z.enum(ACCOUNT_STATUSES);
 export const ACCOUNT_KINDS = ["google", "email"] as const;
 export const AccountKindSchema = z.enum(ACCOUNT_KINDS);
 export const EmailAddressSchema = z.string().trim().email("邮箱格式不正确").max(254);
+export const MobileSchema = z.preprocess(
+  (value) => typeof value === "string"
+    ? value.trim().replace(/\s+/g, " ")
+    : value,
+  z.string().max(32).refine(
+    (value) => value === "" || (
+      /^\+[1-9]\d{0,2} \d{5,14}$/.test(value) &&
+      value.replace(/\D/g, "").length <= 15
+    ),
+    "手机号格式不正确，请使用 +国际区号 本地号码"
+  )
+).default("");
 
 export type SaleStatus = z.infer<typeof SaleStatusSchema>;
 export type AccountStatus = z.infer<typeof AccountStatusSchema>;
@@ -50,6 +62,7 @@ export const AccountEditableFieldsSchema = z
     opName: z.string().trim().max(100).default(""),
     opSecret: z.string().min(1, "OP卡密不能为空").max(4096),
     accountPassword: z.string().max(4096).optional(),
+    mobile: MobileSchema,
     opProject: OpProjectSchema.default(DEFAULT_OP_PROJECT),
     owner: z.string().trim().min(1, "归属人不能为空").max(100),
     registeredRegion: z.preprocess((value) => {
@@ -149,6 +162,7 @@ export type AccountDto = {
   douyinId: string;
   accountKind: AccountKind;
   email: string;
+  mobile: string;
   secUid: string;
   registeredAt: string;
   opName: string;
