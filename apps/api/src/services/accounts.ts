@@ -1,8 +1,10 @@
 import {
+  AccountPatchSchema,
   AccountInputSchema,
   AccountListQuerySchema,
   type AccountDto,
   type AccountInput,
+  type AccountKind,
   type AccountListQuery,
   type AccountStats,
   type AccountStatus,
@@ -17,6 +19,7 @@ import { AppError } from "../middleware/errors";
 import type { SecretCipher } from "./encryption";
 import type { DouyinCheckOptions, DouyinCheckResult } from "./douyin-check";
 import { calculateOpExpiry } from "./op-expiry";
+import { buildAccountKindFilter, resolveAccountKind } from "./account-kind";
 import type { OpProfileCheckResult } from "./op-profile";
 import {
   applyOpProfileResult,
@@ -42,6 +45,7 @@ type AuditService = {
     targetType: string;
     targetIds: string[];
     changedFields: string[];
+    accountKind?: AccountKind;
     count: number;
     ip: string;
     userAgent: string;
@@ -86,14 +90,23 @@ function extractBatchDouyinIds(keyword: string): string[] {
   return [...new Set(terms)];
 }
 
-function toDto(value: AccountRecord & { _id: unknown }): AccountDto {
+function toDto(
+  value: AccountRecord & { _id: unknown },
+  cipher: SecretCipher
+): AccountDto {
   return {
     _id: String(value._id),
     douyinId: value.douyinId,
+    accountKind: resolveAccountKind(value.accountKind),
+    email: value.email ?? "",
+    mobile: value.mobile ?? "",
     secUid: value.secUid,
     registeredAt: value.registeredAt.toISOString(),
     opName: value.opName,
     hasOpSecret: true,
+    accountPassword: value.accountPassword
+      ? cipher.decrypt(value.accountPassword)
+      : "",
     shortOpCode: value.shortOpCode!,
     opProject: value.opProject ?? DEFAULT_OP_PROJECT,
     opExpiresAt: value.opExpiresAt.toISOString(),
@@ -165,7 +178,8 @@ export function createAccountsService({
     action: string,
     targetIds: string[],
     changedFields: string[],
-    context: AuditContext
+    context: AuditContext,
+    accountKind?: AccountKind
   ) {
     await audit.write({
       action,
@@ -173,6 +187,7 @@ export function createAccountsService({
       targetIds,
       changedFields,
       count: targetIds.length,
+      ...(accountKind ? { accountKind } : {}),
       ...context
     });
   }
@@ -187,15 +202,17 @@ export function createAccountsService({
 
     async create(rawInput: unknown, context: AuditContext): Promise<AccountDto> {
       const input = AccountInputSchema.parse(rawInput);
+      const accountKind = resolveAccountKind(input.accountKind);
       const [detected, opResult] = await Promise.all([
         detectDouyinStatus(checkDouyinId, input.douyinId),
         checkOpProfile(input.opSecret)
       ]);
       const prepared = applyOpProfileResult(input, opResult);
+      const { accountPassword, ...preparedFields } = prepared;
       const accountStatus = resolveAccountStatus(detected.accountStatus, opResult);
       try {
         const created = await createAccountWithShortOpRetry(model, {
-          ...prepared,
+          ...preparedFields,
           registeredAt: new Date(`${prepared.registeredAt}T00:00:00.000Z`),
           secUid: detected.secUid,
           accountStatus,
@@ -205,15 +222,19 @@ export function createAccountsService({
             prepared.saleStatus
           ),
           opSecret: cipher.encrypt(prepared.opSecret),
-          opExpiresAt: calculateOpExpiry(prepared.opSecret)
+          opExpiresAt: calculateOpExpiry(prepared.opSecret),
+          accountPassword: accountPassword
+            ? cipher.encrypt(accountPassword)
+            : undefined
         });
         await writeAudit(
           "account.created",
           [String(created._id)],
-          Object.keys(input),
-          context
+          Object.keys(input).filter((field) => field !== "email" || accountKind === "email"),
+          context,
+          accountKind
         );
-        return toDto(created);
+        return toDto(created, cipher);
       } catch (error) {
         throw duplicateError(error) ?? error;
       }
@@ -223,12 +244,13 @@ export function createAccountsService({
       if (!Types.ObjectId.isValid(id)) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
       const account = await model.findById(id).lean();
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
-      return toDto(account as AccountRecord & { _id: unknown });
+      return toDto(account as AccountRecord & { _id: unknown }, cipher);
     },
 
     async list(rawQuery: unknown): Promise<AccountListResult> {
       const query = AccountListQuerySchema.parse(rawQuery);
-      const filter: Record<string, unknown> = {};
+      const accountKindFilter = buildAccountKindFilter(query.accountKind);
+      const filter: Record<string, unknown> = { ...accountKindFilter };
       const requestedDouyinIds = query.keyword
         ? extractBatchDouyinIds(query.keyword)
         : [];
@@ -263,6 +285,7 @@ export function createAccountsService({
       const matchedDouyinIdsPromise: Promise<string[]> = requestedDouyinIds.length
         ? model
             .distinct("douyinId", {
+              ...accountKindFilter,
               ...(filter.registeredAt ? { registeredAt: filter.registeredAt } : {}),
               ...(filter.saleStatus ? { saleStatus: filter.saleStatus } : {}),
               ...(filter.accountStatus ? { accountStatus: filter.accountStatus } : {}),
@@ -275,12 +298,16 @@ export function createAccountsService({
         findQuery.lean(),
         model.countDocuments(filter),
         model.aggregate<{ _id: string; count: number }>([
+          { $match: accountKindFilter },
           { $group: { _id: "$saleStatus", count: { $sum: 1 } } }
         ]),
         matchedDouyinIdsPromise
       ]);
       const statusMap = Object.fromEntries(statusCounts.map((item) => [item._id, item.count]));
-      const abnormal = await model.countDocuments({ accountStatus: { $in: ["violation", "banned", "op_invalid"] } });
+      const abnormal = await model.countDocuments({
+        ...accountKindFilter,
+        accountStatus: { $in: ["violation", "banned", "op_invalid"] }
+      });
       const responsePageSize: 20 | 50 | 100 | "all" =
         resolvedPageSize == null ? "all" : resolvedPageSize;
       const totalPages =
@@ -288,7 +315,7 @@ export function createAccountsService({
           ? 1
           : Math.max(1, Math.ceil(total / resolvedPageSize));
       return {
-        items: items.map((item) => toDto(item as AccountRecord & { _id: unknown })),
+        items: items.map((item) => toDto(item as AccountRecord & { _id: unknown }, cipher)),
         page,
         pageSize: responsePageSize,
         total,
@@ -313,8 +340,12 @@ export function createAccountsService({
       };
     },
 
-    async owners(): Promise<{ items: string[] }> {
-      const values = await model.distinct("owner", { owner: { $ne: "" } });
+    async owners(rawQuery: unknown = {}): Promise<{ items: string[] }> {
+      const query = AccountListQuerySchema.parse(rawQuery);
+      const values = await model.distinct("owner", {
+        ...buildAccountKindFilter(query.accountKind),
+        owner: { $ne: "" }
+      });
       return {
         items: [...new Set(values.map((value) => value.trim()).filter(Boolean))]
           .sort((left, right) => left.localeCompare(right, "zh-CN"))
@@ -322,11 +353,30 @@ export function createAccountsService({
     },
 
     async update(id: string, rawPatch: unknown, context: AuditContext): Promise<AccountDto> {
-      const patch = AccountInputSchema.partial().strict().parse(rawPatch);
+      const patch = AccountPatchSchema.parse(rawPatch);
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
+      const accountKind = resolveAccountKind(account.accountKind);
       const changedFields = Object.keys(patch);
       assertBannedSaleStatusChange(account.accountStatus, patch.saleStatus);
+
+      if ("email" in patch) {
+        if (accountKind === "email") {
+          if (!patch.email) {
+            throw new AppError(400, "EMAIL_REQUIRED", "邮箱不能为空");
+          }
+          account.email = patch.email;
+        } else {
+          account.email = "";
+          changedFields.splice(changedFields.indexOf("email"), 1);
+        }
+      }
+
+      if ("accountPassword" in patch) {
+        account.accountPassword = patch.accountPassword
+          ? cipher.encrypt(patch.accountPassword)
+          : undefined;
+      }
 
       if (patch.douyinId && patch.douyinId !== account.douyinId) {
         const detected = await detectDouyinStatus(checkDouyinId, patch.douyinId);
@@ -345,7 +395,7 @@ export function createAccountsService({
         changedFields.push("opExpiresAt");
       }
       for (const [key, value] of Object.entries(patch)) {
-        if (key === "opSecret") continue;
+        if (key === "opSecret" || key === "accountPassword" || key === "email") continue;
         if (key === "registeredAt") {
           account.registeredAt = new Date(`${value}T00:00:00.000Z`);
         } else {
@@ -357,8 +407,8 @@ export function createAccountsService({
       } catch (error) {
         throw duplicateError(error) ?? error;
       }
-      await writeAudit("account.updated", [id], changedFields, context);
-      return toDto(account);
+      await writeAudit("account.updated", [id], changedFields, context, accountKind);
+      return toDto(account, cipher);
     },
 
     async reveal(id: string, context: AuditContext): Promise<{ opSecret: string }> {
@@ -419,7 +469,7 @@ export function createAccountsService({
         [...changedFields],
         context
       );
-      return toDto(account);
+      return toDto(account, cipher);
     },
 
     async remove(id: string, context: AuditContext): Promise<void> {
@@ -513,7 +563,7 @@ export function createAccountsService({
         ["secUid", "accountStatus", "accountCheckedAt", "saleStatus"],
         context
       );
-      return toDto(account);
+      return toDto(account, cipher);
     },
 
     async batchRecheck(ids: string[], context: AuditContext) {

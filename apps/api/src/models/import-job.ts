@@ -1,4 +1,5 @@
 import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
+import type { AccountKind } from "@douyin-admin/shared";
 
 export type ImportJobStatus = "queued" | "running" | "completed" | "failed";
 export type DuplicateStrategy = "skip" | "update";
@@ -13,6 +14,7 @@ export type ImportRowFailure = {
 export type ImportJobRecord = {
   previewId: string;
   fileName: string;
+  accountKind: AccountKind;
   duplicateStrategy: DuplicateStrategy;
   status: ImportJobStatus;
   total: number;
@@ -35,6 +37,7 @@ const ImportJobSchema = new Schema<ImportJobRecord>(
   {
     previewId: { type: String, required: true, index: true },
     fileName: { type: String, required: true, maxlength: 255 },
+    accountKind: { type: String, required: true, enum: ["google", "email"], default: "google" },
     duplicateStrategy: { type: String, required: true, enum: ["skip", "update"] },
     status: {
       type: String,

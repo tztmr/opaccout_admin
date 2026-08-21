@@ -1,6 +1,39 @@
 import { describe, expect, it } from "vitest";
+import {
+  ACCOUNT_COLUMN_IDS,
+  DEFAULT_ACCOUNT_COLUMN_ORDER,
+  ACCOUNT_KINDS
+} from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
+import { AuditLogModel } from "../models/audit-log";
+import { ImportJobModel } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
+import { SettingModel } from "../models/setting";
+
+describe("AuditLog model", () => {
+  it("stores the non-sensitive account kind for export audit records", () => {
+    expect(AuditLogModel.schema.path("accountKind")?.options.enum).toEqual(ACCOUNT_KINDS);
+  });
+});
+
+describe("Setting model", () => {
+  it("uses shared column enums and independent default column order arrays", () => {
+    expect(SettingModel.schema.path("googleColumnOrder")?.options.enum).toEqual(
+      ACCOUNT_COLUMN_IDS
+    );
+    expect(SettingModel.schema.path("emailColumnOrder")?.options.enum).toEqual(
+      ACCOUNT_COLUMN_IDS
+    );
+
+    const first = new SettingModel({ key: "admin", defaultPageSize: 20, sessionHours: 12 });
+    const second = new SettingModel({ key: "admin", defaultPageSize: 20, sessionHours: 12 });
+    first.googleColumnOrder.pop();
+
+    expect(first.googleColumnOrder).toEqual(DEFAULT_ACCOUNT_COLUMN_ORDER.google.slice(0, -1));
+    expect(second.googleColumnOrder).toEqual(DEFAULT_ACCOUNT_COLUMN_ORDER.google);
+    expect(second.emailColumnOrder).toEqual(DEFAULT_ACCOUNT_COLUMN_ORDER.email);
+  });
+});
 
 describe("Account model", () => {
   it("defines unique identity indexes", () => {
@@ -23,11 +56,26 @@ describe("Account model", () => {
         partialFilterExpression: { shortOpCode: { $type: "string" } }
       })
     ]);
+    expect(indexes).toContainEqual([
+      { accountKind: 1, registeredAt: 1, _id: 1 },
+      expect.objectContaining({ background: true })
+    ]);
+    expect(AccountModel.schema.path("accountKind")?.options.enum).toEqual(ACCOUNT_KINDS);
+    expect(AccountModel.schema.path("email")).toBeDefined();
+    expect(AccountModel.schema.path("email")?.options.default).toBe("");
+    expect(AccountModel.schema.path("mobile")?.options).toMatchObject({
+      required: false,
+      trim: true,
+      maxlength: 32,
+      default: ""
+    });
   });
 
   it("accepts unknown and rejects values outside the shared status enums", async () => {
     const account = new AccountModel({
       douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
       secUid: "MS4wLjABAAAA-fixture",
       registeredAt: new Date("2026-07-28T00:00:00.000Z"),
       opName: "",
@@ -76,8 +124,17 @@ describe("Account model", () => {
   });
 
   it("builds normalized search text before validation", async () => {
+    const encryptedPassword = {
+      version: 1 as const,
+      iv: "cGFzc3dvcmQtaXY=",
+      ciphertext: "cGFzc3dvcmQtY2lwaGVydGV4dA==",
+      authTag: "cGFzc3dvcmQtdGFn"
+    };
     const account = new AccountModel({
       douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
+      mobile: " +86 13037174892 ",
       secUid: "MS4wLjABAAAA-Fixture",
       registeredAt: new Date("2026-07-27T00:00:00.000Z"),
       opName: " 星河 ",
@@ -94,7 +151,8 @@ describe("Account model", () => {
       accountCheckedAt: new Date(),
       remark: " 新号 ",
       shortOpCode: "123456789",
-      opProject: "douyin"
+      opProject: "douyin",
+      accountPassword: encryptedPassword
     });
 
     await account.validate();
@@ -103,6 +161,11 @@ describe("Account model", () => {
     expect(account.searchText).toContain("星河");
     expect(account.searchText).toContain("123456789");
     expect(account.searchText).toContain("抖音");
+    expect(account.searchText).toContain("mail@example.com");
+    expect(account.get("mobile")).toBe("+86 13037174892");
+    expect(account.searchText).toContain("+86 13037174892");
+    expect(account.toObject().accountPassword).toEqual(encryptedPassword);
+    expect(account.searchText).not.toContain("douyin-pass");
   });
 });
 
@@ -113,5 +176,36 @@ describe("ImportPreview model", () => {
       .find(([keys]) => keys.expiresAt === 1);
 
     expect(ttlIndex?.[1].expireAfterSeconds).toBe(0);
+  });
+
+  it("defaults historical preview records to the Google account kind", async () => {
+    const preview = new ImportPreviewModel({
+      fileName: "accounts.csv",
+      fileType: "csv",
+      ownerSessionId: "session-id",
+      stagedRows: [],
+      rowErrors: [],
+      totalRows: 0,
+      validRows: 0,
+      expiresAt: new Date("2026-08-21T00:00:00.000Z")
+    });
+
+    await expect(preview.validate()).resolves.toBeUndefined();
+    expect(preview.accountKind).toBe("google");
+  });
+});
+
+describe("ImportJob model", () => {
+  it("defaults historical jobs to the Google account kind", async () => {
+    const job = new ImportJobModel({
+      previewId: "preview-id",
+      fileName: "accounts.csv",
+      duplicateStrategy: "skip",
+      status: "queued",
+      total: 0
+    });
+
+    await expect(job.validate()).resolves.toBeUndefined();
+    expect(job.accountKind).toBe("google");
   });
 });

@@ -68,14 +68,39 @@ input:not([type="checkbox"]):not([type="radio"]), select, textarea { border: 1px
 input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus { border-color: #9bb9ff; box-shadow: 0 0 0 3px #eff4ff; }
 select { height: 36px; padding: 0 30px 0 10px; }
 .table-scroll { width: 100%; overflow-x: auto; }
-table { width: 100%; min-width: 1720px; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; white-space: nowrap; }
 th { height: 43px; padding: 0 12px; color: #6d7688; background: #fafbfc; text-align: left; font-weight: 600; }
 td { max-width: 220px; height: 50px; padding: 0 12px; border-top: 1px solid #edf0f4; overflow: hidden; text-overflow: ellipsis; }
 tbody tr:hover { background: #fafcff; }
 .empty { height: 118px; text-align: center; color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #657087; }
-.short-op-cell { min-width: 192px; max-width: none; }
 .short-op-cell .link { margin-left: 8px; }
+.accounts-table { min-width: 1410px; table-layout: fixed; }
+.accounts-table-email { min-width: 1518px; }
+.accounts-table th,
+.accounts-table td { padding-inline: 6px; }
+.accounts-table .col-check { width: 38px; }
+.accounts-table .col-index { width: 42px; }
+.accounts-table .col-douyin { width: 90px; }
+.accounts-table .col-email { width: 108px; }
+.accounts-table .col-password { width: 82px; }
+.accounts-table .col-secuid { width: 104px; }
+.accounts-table .col-date { width: 78px; }
+.accounts-table .col-opname { width: 68px; }
+.accounts-table .col-opsecret { width: 64px; }
+.accounts-table .col-shortop { width: 120px; }
+.accounts-table .col-mobile { width: 84px; }
+.accounts-table .col-project { width: 48px; }
+.accounts-table .col-expiry { width: 112px; }
+.accounts-table .col-owner { width: 58px; }
+.accounts-table .col-region { width: 66px; }
+.accounts-table .col-sale { width: 70px; }
+.accounts-table .col-status { width: 60px; }
+.accounts-table .col-remark { width: 66px; }
+.accounts-table .col-actions { width: 160px; }
+.accounts-table .short-op-cell { min-width: 0; }
+.accounts-table .actions { gap: 3px; }
+.accounts-table .actions .link { font-size: 12px; }
 .tag { width: max-content; min-height: 24px; display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
 .sale-unknown { color: #667085; background: #f2f4f7; }
 .sale-unsold { color: #866100; background: #fff6d8; }
@@ -151,6 +176,15 @@ td.check-cell {
 .dialog-body label { display: grid; gap: 8px; color: #566074; font-size: 13px; font-weight: 600; }
 .dialog-body input, .dialog-body select { height: 40px; padding: 0 11px; }
 .dialog-card footer { display: flex; justify-content: flex-end; gap: 9px; padding: 16px 22px 22px; }
+.column-order-dialog { width: min(520px,100%); max-height: min(760px,calc(100vh - 40px)); display: flex; flex-direction: column; }
+.column-order-dialog .dialog-body { min-height: 0; overflow-y: auto; }
+.column-order-help { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.column-order-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.column-order-list li { display: grid; grid-template-columns: 34px minmax(0,1fr) 34px 34px; align-items: center; gap: 7px; padding: 7px; border: 1px solid var(--border); border-radius: 7px; background: #fafbfc; }
+.column-order-list button { width: 34px; min-height: 32px; padding: 0; }
+.column-order-list .drag-handle { cursor: grab; color: var(--muted); letter-spacing: -3px; }
+.column-order-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; font-weight: 600; }
+.column-order-footer-space { flex: 1; }
 .drawer h2, .panel-head h2, .upload-card h2, .guide-card h2, .settings-card h2 { margin-bottom: 5px; font-size: 17px; }
 .drawer header p { margin: 0; color: var(--muted); font-size: 12px; }
 .form-grid { display: grid; gap: 16px; padding: 21px 22px; overflow-y: auto; }
@@ -319,8 +353,9 @@ td.check-cell {
   .shell { display: block; }
   .sidebar { position: fixed; inset: auto 0 0; z-index: 20; width: 100%; height: 62px; flex-direction: row; padding: 7px 10px; }
   .brand, .logout { display: none; }
-  .sidebar nav { width: 100%; grid-template-columns: repeat(4,1fr); gap: 4px; margin: 0; }
-  .sidebar nav a { height: 48px; flex-direction: column; gap: 2px; font-size: 10px; }
+  .sidebar nav { width: 100%; grid-template-columns: repeat(5,1fr); gap: 4px; margin: 0; }
+  .sidebar nav a { height: 48px; flex-direction: column; gap: 2px; padding: 0; font-size: 9px; }
+  .sidebar nav a span { letter-spacing: -.5px; white-space: nowrap; }
   .sidebar nav span { display: block; }
   .sidebar nav a.active { box-shadow: inset 0 -3px var(--coral); }
   .main { padding: 20px 14px 86px; }

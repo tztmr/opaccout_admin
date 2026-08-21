@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
+import { AccountKindSchema, type AccountKind } from "@douyin-admin/shared";
 import { Worker } from "node:worker_threads";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,7 @@ import { ImportPreviewModel } from "../models/import-preview";
 import type { SecretCipher } from "../services/encryption";
 import { exportTemplate } from "../services/exporter";
 import type { ImportParseResult } from "../services/import-parser";
+import { getAccountColumnOrder } from "../services/account-column-settings";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,10 +18,14 @@ const workerPath = process.env.NODE_ENV === "production"
   ? path.join(__dirname, "services/import-parser-worker.cjs") 
   : path.join(__dirname, "../services/import-parser-worker.ts");
 
-function parseImportAsync(buffer: Buffer, fileName: string): Promise<ImportParseResult> {
+function parseImportAsync(
+  buffer: Buffer,
+  fileName: string,
+  accountKind: AccountKind
+): Promise<ImportParseResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(workerPath, {
-      workerData: { buffer, fileName },
+      workerData: { buffer, fileName, accountKind },
       execArgv: process.env.NODE_ENV === "production" ? [] : ["--import", "tsx"]
     });
     worker.on("message", (msg) => {
@@ -40,22 +46,40 @@ const upload = multer({
 
 export function createImportsRouter(cipher: SecretCipher): Router {
   const router = Router();
-  router.get("/template", (req, res) => {
-    const format = req.query.format === "csv" ? "csv" : "xlsx";
-    res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.attachment(`douyin-account-template.${format}`).send(exportTemplate(format));
+  router.get("/template", async (req, res, next) => {
+    try {
+      const format = req.query.format === "csv" ? "csv" : "xlsx";
+      const accountKind = AccountKindSchema.parse(req.query.accountKind ?? "google");
+      const columnOrder = await getAccountColumnOrder(accountKind);
+      res.type(format === "csv" ? "text/csv" : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.attachment(`douyin-${accountKind}-account-template.${format}`).send(
+        exportTemplate(format, accountKind, columnOrder)
+      );
+    } catch (error) { next(error); }
   });
   router.post("/preview", upload.single("file"), async (req, res, next) => {
     try {
       if (!req.file) throw new Error("IMPORT_FILE_REQUIRED");
-      const parsed = await parseImportAsync(req.file.buffer, req.file.originalname);
-      const stagedRows = parsed.rows.map((row) => ({
-        ...row,
-        opSecret: cipher.encrypt(row.opSecret)
-      }));
+      const accountKind = AccountKindSchema.parse(req.body?.accountKind ?? "google");
+      const parsed = await parseImportAsync(
+        req.file.buffer,
+        req.file.originalname,
+        accountKind
+      );
+      const stagedRows = parsed.rows.map((row) => {
+        const { accountPassword, ...fields } = row;
+        return {
+          ...fields,
+          opSecret: cipher.encrypt(row.opSecret),
+          accountPassword: accountPassword
+            ? cipher.encrypt(accountPassword)
+            : undefined
+        };
+      });
       const preview = await ImportPreviewModel.create({
         fileName: req.file.originalname,
         fileType: req.file.originalname.toLowerCase().endsWith(".csv") ? "csv" : req.file.originalname.toLowerCase().endsWith(".xls") ? "xls" : "xlsx",
+        accountKind,
         ownerSessionId: req.sessionID,
         stagedRows,
         rowErrors: parsed.errors,
@@ -86,6 +110,7 @@ export function createImportsRouter(cipher: SecretCipher): Router {
       const job = await ImportJobModel.create({
         previewId: preview.id,
         fileName: preview.fileName,
+        accountKind: preview.accountKind ?? "google",
         duplicateStrategy: value.duplicateStrategy,
         status: "queued",
         total: preview.validRows

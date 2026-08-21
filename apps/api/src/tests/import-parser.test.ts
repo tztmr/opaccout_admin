@@ -2,13 +2,165 @@ import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
 import { parseImport } from "../services/import-parser";
 
-function workbookBuffer(rows: Record<string, unknown>[]): Buffer {
+function workbookBuffer(
+  rows: Record<string, unknown>[],
+  bookType: "xlsx" | "xls" = "xlsx"
+): Buffer {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "账号");
-  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return XLSX.write(workbook, { type: "buffer", bookType }) as Buffer;
 }
 
 describe("parseImport", () => {
+  it("imports email account fields from CSV", () => {
+    const csv = [
+      "抖音号,邮箱,手机号,密码,注册时间,OP卡密,归属人",
+      "94946893573,mail@example.com, +852   65478974 ,douyin-pass,2026-07-27,a|b|1782303418,小王"
+    ].join("\n");
+
+    const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv", "email");
+
+    expect(result.rows[0]).toMatchObject({
+      accountKind: "email",
+      email: "mail@example.com",
+      mobile: "+852 65478974",
+      accountPassword: "douyin-pass"
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it.each(["xls", "xlsx"] as const)("imports email account fields from %s", (bookType) => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      邮箱: "mail@example.com",
+      密码: "douyin-pass",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }], bookType), `accounts.${bookType}`, "email");
+
+    expect(result.rows[0]).toMatchObject({
+      accountKind: "email",
+      email: "mail@example.com",
+      accountPassword: "douyin-pass"
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it("imports a Google mobile number from an XLSX 手机号 header", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      手机号: " +852   65478974 ",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx", "google");
+
+    expect(result.rows[0]?.mobile).toBe("+852 65478974");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("reports an invalid 手机号 as a mobile validation error", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      手机号: "852-65478974",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx", "google");
+
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.objectContaining({ field: "mobile", code: "VALIDATION_FAILED" })
+    ]);
+  });
+
+  it("reports missing and malformed email values against email", () => {
+    const result = parseImport(workbookBuffer([
+      {
+        抖音号: "94946893573",
+        邮箱: "",
+        注册时间: "2026-07-27",
+        OP卡密: "a|b|1782303418",
+        归属人: "小王"
+      },
+      {
+        抖音号: "94946893574",
+        邮箱: "not-an-email",
+        注册时间: "2026-07-27",
+        OP卡密: "a|b|1782303418",
+        归属人: "小王"
+      }
+    ]), "accounts.xlsx", "email");
+
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toEqual([
+      expect.objectContaining({ row: 2, field: "email", code: "VALIDATION_FAILED" }),
+      expect.objectContaining({ row: 3, field: "email", code: "VALIDATION_FAILED" })
+    ]);
+  });
+
+  it("defaults legacy imports without a kind to Google rows", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      邮箱: "mail@example.com",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]).toMatchObject({ accountKind: "google", email: "" });
+  });
+
+  it("imports the optional 密码 column", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      密码: "douyin-pass",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.accountPassword).toBe("douyin-pass");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("defaults old import files without 密码 to an empty password", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }]), "accounts.xlsx");
+
+    expect(result.rows[0]?.accountPassword).toBe("");
+  });
+
+  it("imports the password column from a legacy XLS workbook", () => {
+    const result = parseImport(workbookBuffer([{
+      抖音号: "94946893573",
+      密码: "legacy-xls-pass",
+      注册时间: "2026-07-27",
+      OP卡密: "a|b|1782303418",
+      归属人: "小王"
+    }], "xls"), "accounts.xls");
+
+    expect(result.rows[0]?.accountPassword).toBe("legacy-xls-pass");
+    expect(result.errors).toEqual([]);
+  });
+
+  it("imports the password column from CSV", () => {
+    const csv = [
+      "抖音号,密码,注册时间,OP卡密,归属人",
+      "94946893573,csv-pass,2026-07-27,a|b|1782303418,小王"
+    ].join("\n");
+
+    const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv");
+
+    expect(result.rows[0]?.accountPassword).toBe("csv-pass");
+    expect(result.errors).toEqual([]);
+  });
+
   it("reads a UTF-8 Chinese CSV without a BOM", () => {
     const csv = [
       "抖音号,注册时间,OP名称,OP卡密,归属人,注册地区,售卖状态,备注",

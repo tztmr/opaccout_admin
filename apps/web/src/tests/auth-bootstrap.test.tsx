@@ -103,11 +103,33 @@ describe("administrator bootstrap UI", () => {
     await user.type(screen.getByLabelText("确认密码"), "a-long-admin-password");
     await user.click(screen.getByRole("button", { name: "注册管理员" }));
 
-    expect(await screen.findByText("抖音账号")).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "抖音谷歌账号" }))
+      .toHaveAttribute("href", "/accounts/google");
+    expect(screen.getByRole("link", { name: "抖音邮箱号" }))
+      .toHaveAttribute("href", "/accounts/email");
+    expect(await screen.findByRole("heading", { name: "抖音谷歌账号管理" }))
+      .toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/auth/setup",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  it("redirects the legacy accounts address to the Google account page", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/auth/session") return json({ authenticated: true, username: "admin" });
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path.startsWith("/api/accounts")) return json({
+        items: [], total: 0, page: 1, pageSize: 20, totalPages: 1,
+        stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+      });
+      return json({});
+    }));
+    renderApp("/accounts");
+
+    expect(await screen.findByRole("heading", { name: "抖音谷歌账号管理" }))
+      .toBeInTheDocument();
   });
 
   it("moves a stale registration page to login after a setup conflict", async () => {

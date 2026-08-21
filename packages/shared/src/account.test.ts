@@ -1,12 +1,144 @@
 import { describe, expect, it } from "vitest";
 import {
+  type AccountInput,
+  AccountPatchSchema,
   AccountInputSchema,
   AccountListQuerySchema,
+  EmailAddressSchema,
   ACCOUNT_STATUS_LABELS,
   SALE_STATUS_LABELS
 } from "./account";
 
 describe("AccountInputSchema", () => {
+  const validInput = {
+    douyinId: "94946893573",
+    registeredAt: "2026-07-27",
+    opName: "",
+    opSecret: "a|b|1782303418",
+    owner: "小王",
+    saleStatus: "unsold" as const,
+    remark: ""
+  };
+
+  it.each([
+    [" +86   13037174892 ", "+86 13037174892"],
+    ["+852 65478974", "+852 65478974"],
+    ["", ""]
+  ])("normalizes mobile %s", (mobile, expected) => {
+    const parsed = AccountInputSchema.parse({ ...validInput, mobile });
+    expect(parsed.mobile).toBe(expected);
+  });
+
+  it.each(["86 13037174892", "+86-13037174892", "+0 12345678", "+852 "])(
+    "rejects invalid mobile %s",
+    (mobile) => {
+      expect(AccountInputSchema.safeParse({ ...validInput, mobile }).success).toBe(false);
+    }
+  );
+
+  it("defaults historical input mobile to empty", () => {
+    expect(AccountInputSchema.parse(validInput).mobile).toBe("");
+  });
+
+  it("keeps historical AccountInput callers compatible when mobile is omitted", () => {
+    const historicalInput: AccountInput = {
+      ...validInput,
+      opProject: "douyin",
+      registeredRegion: "中国.香港"
+    };
+    expect(historicalInput.mobile).toBeUndefined();
+  });
+
+  it("shares mobile normalization and validation with account patches", () => {
+    expect(AccountPatchSchema.parse({})).not.toHaveProperty("mobile");
+    expect(AccountPatchSchema.parse({ mobile: "   " }).mobile).toBe("");
+    expect(AccountPatchSchema.parse({ mobile: " +86   13037174892 " }).mobile)
+      .toBe("+86 13037174892");
+    expect(AccountPatchSchema.safeParse({ mobile: "+86-13037174892" }).success).toBe(false);
+    expect(AccountPatchSchema.safeParse({ mobile: 8613037174892 }).success).toBe(false);
+  });
+
+  it("shares the strict email address schema used by account input and patches", () => {
+    expect(EmailAddressSchema.safeParse("mail@example.test").success).toBe(true);
+    expect(EmailAddressSchema.safeParse("a@b.c").success).toBe(false);
+    expect(EmailAddressSchema.safeParse("a,b@example.com").success).toBe(false);
+    expect(() => AccountInputSchema.parse({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      accountKind: "email",
+      email: "a@b.c"
+    })).toThrow("邮箱格式不正确");
+    expect(() => AccountPatchSchema.parse({ email: "a,b@example.com" })).toThrow("邮箱格式不正确");
+  });
+
+  it("defaults Google accounts and normalizes email account addresses", () => {
+    const base = {
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold" as const,
+      remark: ""
+    };
+
+    expect(AccountInputSchema.parse(base)).toMatchObject({
+      accountKind: "google",
+      email: ""
+    });
+    expect(AccountInputSchema.parse({
+      ...base,
+      accountKind: "email",
+      email: " mail@example.com "
+    }).email).toBe("mail@example.com");
+  });
+
+  it("requires an email address for email accounts", () => {
+    const base = {
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold" as const,
+      remark: ""
+    };
+
+    expect(() => AccountInputSchema.parse({
+      ...base,
+      accountKind: "email",
+      email: ""
+    })).toThrow("邮箱不能为空");
+    expect(() => AccountPatchSchema.parse({ accountKind: "email" })).toThrow();
+  });
+
+  it("accepts an optional Douyin account password", () => {
+    const base = {
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold" as const,
+      remark: ""
+    };
+    expect(AccountInputSchema.parse({ ...base, accountPassword: "douyin-pass" }).accountPassword)
+      .toBe("douyin-pass");
+    expect(AccountInputSchema.parse(base)).not.toHaveProperty("accountPassword");
+  });
+
+  it("rejects an account password longer than 4096 characters", () => {
+    expect(() => AccountInputSchema.parse({
+      douyinId: "94946893573",
+      registeredAt: "2026-07-27",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      accountPassword: "x".repeat(4097)
+    })).toThrow();
+  });
+
   it("accepts only administrator-entered fields", () => {
     const value = AccountInputSchema.parse({
       douyinId: "94946893573",
@@ -114,6 +246,10 @@ describe("AccountInputSchema", () => {
 });
 
 describe("AccountListQuerySchema", () => {
+  it("defaults account lists to Google accounts", () => {
+    expect(AccountListQuerySchema.parse({}).accountKind).toBe("google");
+  });
+
   it("accepts an exact owner list filter", () => {
     expect(AccountListQuerySchema.parse({ owner: " 张三 " }).owner).toBe("张三");
   });

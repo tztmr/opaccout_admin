@@ -12,11 +12,13 @@ describe("account filter state", () => {
   it("includes the owner in unselected exports", () => {
     const result = buildAccountExportParams(
       new URLSearchParams("owner=张三&saleStatus=unknown&sortDirection=desc&page=2"),
-      new Set()
+      new Set(),
+      "email"
     );
 
     expect(result).toEqual({
       format: "xlsx",
+      accountKind: "email",
       owner: "张三",
       saleStatus: "unknown",
       sortDirection: "desc"
@@ -26,11 +28,13 @@ describe("account filter state", () => {
   it("prioritizes selected ids over filters", () => {
     const result = buildAccountExportParams(
       new URLSearchParams("owner=张三"),
-      new Set(["a", "b"])
+      new Set(["a", "b"]),
+      "google"
     );
 
     expect(result).toEqual({
       format: "xlsx",
+      accountKind: "google",
       ids: ["a", "b"]
     });
   });

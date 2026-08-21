@@ -7,26 +7,42 @@ describe("audit service", () => {
     const audit = createAuditService({ create });
 
     await audit.write({
-      action: "account.updated",
+      action: "account.exported",
       targetType: "account",
       targetIds: ["account-id"],
-      changedFields: ["owner", "opSecret", "secUid", "cookie"],
+      changedFields: [
+        "accountKind", "douyin", "email", "mobile", "password", "shortop",
+        "opsecret", "owner", "opSecret", "accountPassword", "secUid", "cookie"
+      ],
+      accountKind: "email",
       count: 1,
       ip: "127.0.0.1",
       userAgent: "Browser\r\nInjected",
-      requestId: "request-id"
-    });
+      requestId: "request-id",
+      mobile: "+86 13037174892",
+      email: "mail@example.com",
+      accountPassword: "douyin-pass",
+      opSecret: "a|b|1782303418"
+    } as never);
 
     expect(create).toHaveBeenCalledWith({
-      action: "account.updated",
+      action: "account.exported",
       targetType: "account",
       targetIds: ["account-id"],
-      changedFields: ["owner", "opSecret", "secUid"],
+      changedFields: [
+        "accountKind", "douyin", "email", "mobile", "password", "shortop",
+        "opsecret", "owner", "opSecret", "accountPassword", "secUid"
+      ],
+      accountKind: "email",
       count: 1,
       ip: "127.0.0.1",
       userAgent: "Browser Injected",
       requestId: "request-id"
     });
     expect(JSON.stringify(create.mock.calls)).not.toContain("cookie");
+    expect(JSON.stringify(create.mock.calls)).not.toContain("+86 13037174892");
+    expect(JSON.stringify(create.mock.calls)).not.toContain("mail@example.com");
+    expect(JSON.stringify(create.mock.calls)).not.toContain("douyin-pass");
+    expect(JSON.stringify(create.mock.calls)).not.toContain("a|b|1782303418");
   });
 });

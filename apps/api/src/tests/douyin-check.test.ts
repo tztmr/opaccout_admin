@@ -39,21 +39,48 @@ describe("parseDouyinResponse", () => {
     expect(parseDouyinResponse(fixture).accountStatus).toBe("violation");
   });
 
-  it("does not map ban_type=1 alone to banned", () => {
+  it("maps ban_type=1 to banned before generic punishment signals", () => {
     const fixture = {
       status: 200,
       body: JSON.stringify({
         status_code: 0,
         user_info: {
-          sec_uid: "MS4wLjABAAAA-ban-type-only",
-          is_ban: false,
+          sec_uid: "MS4w-ban-type-1",
+          is_ban: true,
           punish_remind_info: { is_punish: true, ban_type: 1 }
         }
       })
     };
 
-    // without punish_title, treat as violation rather than banned
+    expect(parseDouyinResponse(fixture).accountStatus).toBe("banned");
+  });
+
+  it("maps ban_type=2 to violation", () => {
+    const fixture = {
+      status: 200,
+      body: JSON.stringify({
+        status_code: 0,
+        user_info: {
+          sec_uid: "MS4w-ban-type-2",
+          is_ban: true,
+          punish_remind_info: { ban_type: 2 }
+        }
+      })
+    };
+
     expect(parseDouyinResponse(fixture).accountStatus).toBe("violation");
+  });
+
+  it("keeps an undiscriminated is_ban=true response unknown", () => {
+    const fixture = {
+      status: 200,
+      body: JSON.stringify({
+        status_code: 0,
+        user_info: { sec_uid: "MS4w-ambiguous", is_ban: true }
+      })
+    };
+
+    expect(parseDouyinResponse(fixture).accountStatus).toBe("unknown");
   });
 
   it("maps banned status from punish_title without ban_type", () => {

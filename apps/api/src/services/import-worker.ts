@@ -1,4 +1,4 @@
-import type { AccountInput } from "@douyin-admin/shared";
+import type { AccountInput, AccountKind } from "@douyin-admin/shared";
 import { AccountModel } from "../models/account";
 import { ImportJobModel, type ImportRowFailure } from "../models/import-job";
 import { ImportPreviewModel } from "../models/import-preview";
@@ -6,8 +6,12 @@ import { AppError } from "../middleware/errors";
 import type { AccountsService, AuditContext } from "./accounts";
 import { DouyinCheckError } from "./douyin-check";
 import type { EncryptedValue, SecretCipher } from "./encryption";
+import { resolveAccountKind } from "./account-kind";
 
-type StagedRow = Omit<AccountInput, "opSecret"> & { opSecret: EncryptedValue };
+type StagedRow = Omit<AccountInput, "opSecret" | "accountPassword"> & {
+  opSecret: EncryptedValue;
+  accountPassword?: EncryptedValue | string | undefined;
+};
 export type ImportRowOutcome = "created" | "updated" | "skipped";
 
 const DOUYIN_ERROR_MESSAGES: Record<string, string> = {
@@ -95,14 +99,18 @@ export async function processImportRow(
   context: AuditContext,
   findExisting: (
     douyinId: string
-  ) => Promise<{ _id: unknown } | null> = async (douyinId) =>
-    AccountModel.findOne({ douyinId }).select("_id").lean()
+  ) => Promise<{ _id: unknown; accountKind?: AccountKind } | null> = async (douyinId) =>
+    AccountModel.findOne({ douyinId }).select("_id accountKind").lean()
 ): Promise<ImportRowOutcome> {
   const existing = await findExisting(input.douyinId);
-  if (existing && duplicateStrategy === "skip") return "skipped";
   if (existing) {
+    if (resolveAccountKind(existing.accountKind) !== resolveAccountKind(input.accountKind)) {
+      throw new AppError(409, "DOUYIN_ID_DUPLICATE", "抖音号已存在");
+    }
+    if (duplicateStrategy === "skip") return "skipped";
     const id = String(existing._id);
-    await runImportAttempt(() => accounts.update(id, input, context));
+    const { accountKind: _accountKind, ...patch } = input;
+    await runImportAttempt(() => accounts.update(id, patch, context));
     const rechecked = await runImportAttempt(() => accounts.recheck(id, context));
     if (rechecked.accountStatus === "banned") {
       await ensureImportedOpName(accounts, id, rechecked.opName, context);
@@ -139,10 +147,22 @@ export async function processNextImportJob(
   const context = { ip: "system", userAgent: "import-worker", requestId: `import-${job.id}` };
   const failures: ImportRowFailure[] = [];
   const stagedRows = preview.stagedRows as StagedRow[];
+  const accountKind = preview.accountKind ?? job.accountKind ?? "google";
   for (let index = 0; index < stagedRows.length; index += 1) {
     const raw = stagedRows[index]!;
     const rowNumber = index + 2;
-    const input: AccountInput = { ...raw, opSecret: cipher.decrypt(raw.opSecret) };
+    const input: AccountInput = {
+      ...raw,
+      accountKind,
+      email: accountKind === "email" ? raw.email ?? "" : "",
+      mobile: raw.mobile ?? "",
+      opSecret: cipher.decrypt(raw.opSecret),
+      accountPassword: typeof raw.accountPassword === "string"
+        ? raw.accountPassword
+        : raw.accountPassword
+          ? cipher.decrypt(raw.accountPassword)
+          : ""
+    };
     try {
       const outcome = await processImportRow(
         accounts,

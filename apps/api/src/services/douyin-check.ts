@@ -78,15 +78,16 @@ function mapAccountStatus(
   const punishContent = punishment?.punish_content?.content?.trim() ?? "";
   const content = [promptContent, punishContent].filter(Boolean).join("\n");
 
-  if (title === "账号已被封禁") return "banned";
-  // profile/other: punish_title=违规处罚说明, content=该用户被禁止关注 => 违规
-  if (title === "违规处罚说明" || content.includes("该用户被禁止关注")) {
-    return "violation";
-  }
-  if (title) return "violation";
-  if (punishment?.is_punish) return "violation";
-  if (isBan === true) return "violation";
-  return "normal";
+  if (punishment?.ban_type === 1 || title === "账号已被封禁") return "banned";
+  if (
+    punishment?.ban_type === 2 ||
+    title === "违规处罚说明" ||
+    content.includes("该用户被禁止关注") ||
+    Boolean(title) ||
+    punishment?.is_punish === true
+  ) return "violation";
+  if (isBan === false || (isBan === undefined && punishment == null)) return "normal";
+  return "unknown";
 }
 
 function parseJsonish(text: string): unknown {

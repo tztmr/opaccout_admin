@@ -25,13 +25,55 @@ describe("global form control styles", () => {
     expect(batchBarButtonRule).toContain("white-space: nowrap;");
   });
 
-  it("keeps the expanded account table horizontally scrollable without ellipsizing checkboxes", () => {
+  it("keeps the account table within the 1920 desktop content budget", () => {
+    const accountTableRule =
+      styles.match(/\.accounts-table\s*\{[^}]+\}/)?.[0] ?? "";
+    const actionsRule =
+      styles.match(/\.accounts-table \.actions\s*\{[^}]+\}/)?.[0] ?? "";
+
+    expect(accountTableRule).toContain("table-layout: fixed;");
+    expect(accountTableRule).toContain("min-width: 1410px;");
+    expect(accountTableRule).not.toContain("1720px");
+    expect(styles).not.toMatch(/min-width:\s*1[6-9]\d{2}px/);
+    expect(actionsRule).toContain("gap: 3px;");
+  });
+
+  it("adds only the email page width needed for its extra column", () => {
+    const emailTableRule =
+      styles.match(/\.accounts-table-email\s*\{[^}]+\}/)?.[0] ?? "";
+    const emailColumnRule =
+      styles.match(/\.accounts-table \.col-email\s*\{[^}]+\}/)?.[0] ?? "";
+    const mobileColumnRule =
+      styles.match(/\.accounts-table \.col-mobile\s*\{[^}]+\}/)?.[0] ?? "";
+
+    expect(emailTableRule).toContain("min-width: 1518px;");
+    expect(emailTableRule).not.toContain("1720px");
+    expect(emailColumnRule).toContain("width: 108px;");
+    expect(mobileColumnRule).toMatch(/width:\s*\d+px;/);
+  });
+
+  it("keeps table overflow and checkbox clipping scoped separately", () => {
     const tableScrollRule = styles.match(/\.table-scroll\s*\{[^}]+\}/)?.[0] ?? "";
-    const tableRule = styles.match(/table\s*\{[^}]+\}/)?.[0] ?? "";
     const checkCellRule = styles.match(/\.check-cell,[\s\S]*?\n}\n/)?.[0] ?? "";
 
     expect(tableScrollRule).toContain("overflow-x: auto;");
-    expect(tableRule).toContain("min-width:");
     expect(checkCellRule).toContain("text-overflow: clip !important;");
+    expect(styles).not.toMatch(/(?:html|body|\.main|\.main > section)\s*\{[^}]*overflow-x:\s*(?:auto|scroll)/);
+  });
+
+  it("styles the explicit column-order dialog without adding a table overlay", () => {
+    expect(styles).toMatch(/\.column-order-dialog\s*\{[^}]+\}/);
+    expect(styles).toMatch(/\.column-order-list\s*\{[^}]+\}/);
+    expect(styles).toMatch(/\.column-order-list li\s*\{[^}]+\}/);
+    expect(styles).not.toMatch(/\.table-scroll::(?:before|after)/);
+  });
+
+  it("keeps all five mobile navigation links in the fixed bottom bar", () => {
+    const mobileRule = styles.match(
+      /@media \(max-width: 680px\) \{[\s\S]*?\.sidebar nav\s*\{[^}]+\}/
+    )?.[0] ?? "";
+
+    expect(mobileRule).toContain("grid-template-columns: repeat(5,1fr);");
+    expect(mobileRule).not.toContain("repeat(4,1fr)");
   });
 });

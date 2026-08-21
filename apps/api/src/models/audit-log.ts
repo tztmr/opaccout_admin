@@ -1,3 +1,4 @@
+import { ACCOUNT_KINDS, type AccountKind } from "@douyin-admin/shared";
 import { model, models, Schema, type HydratedDocument, type Model } from "mongoose";
 
 export type AuditLogRecord = {
@@ -5,6 +6,7 @@ export type AuditLogRecord = {
   targetType: string;
   targetIds: string[];
   changedFields: string[];
+  accountKind?: AccountKind;
   count: number;
   ip: string;
   userAgent: string;
@@ -20,6 +22,7 @@ const AuditLogSchema = new Schema<AuditLogRecord>(
     targetType: { type: String, required: true, maxlength: 100 },
     targetIds: { type: [String], required: true, default: [] },
     changedFields: { type: [String], required: true, default: [] },
+    accountKind: { type: String, required: false, enum: ACCOUNT_KINDS },
     count: { type: Number, required: true, min: 0 },
     ip: { type: String, required: true, maxlength: 128 },
     userAgent: { type: String, required: true, maxlength: 512 },
