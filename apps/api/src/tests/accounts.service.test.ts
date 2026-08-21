@@ -245,6 +245,61 @@ describe("accounts service", () => {
     expect(result.accountPassword).toBe("");
   });
 
+  it("returns resolved account kind and email in DTOs", async () => {
+    const legacyAccount = accountDocument();
+    const emailAccount = accountDocument({
+      accountKind: "email",
+      email: "mail@example.com"
+    });
+    const legacyService = createAccountsService(
+      dependencies({ findById: vi.fn(() => ({ lean: vi.fn(async () => legacyAccount) })) })
+    );
+    const emailService = createAccountsService(
+      dependencies({ findById: vi.fn(() => ({ lean: vi.fn(async () => emailAccount) })) })
+    );
+
+    await expect(legacyService.get(String(legacyAccount._id))).resolves.toMatchObject({
+      accountKind: "google",
+      email: ""
+    });
+    await expect(emailService.get(String(emailAccount._id))).resolves.toMatchObject({
+      accountKind: "email",
+      email: "mail@example.com"
+    });
+  });
+
+  it("rejects clearing an email account address", async () => {
+    const account = accountDocument({ accountKind: "email", email: "mail@example.com" });
+    const service = createAccountsService(
+      dependencies({ findById: vi.fn(async () => account) })
+    );
+
+    await expect(service.update(String(account._id), { email: "" }, context))
+      .rejects.toMatchObject({ status: 400, code: "EMAIL_REQUIRED" });
+    expect(account.email).toBe("mail@example.com");
+    expect(account.save).not.toHaveBeenCalled();
+  });
+
+  it("updates email accounts but keeps Google and historical account emails empty", async () => {
+    const emailAccount = accountDocument({ accountKind: "email", email: "old@example.com" });
+    const emailService = createAccountsService(
+      dependencies({ findById: vi.fn(async () => emailAccount) })
+    );
+
+    await emailService.update(String(emailAccount._id), { email: "new@example.com" }, context);
+    expect(emailAccount.email).toBe("new@example.com");
+
+    for (const accountKind of [undefined, "google"] as const) {
+      const account = accountDocument({ accountKind, email: "stale@example.com" });
+      const service = createAccountsService(
+        dependencies({ findById: vi.fn(async () => account) })
+      );
+
+      await service.update(String(account._id), { email: "other@example.com" }, context);
+      expect(account.email).toBe("");
+    }
+  });
+
   it("keeps the assigned short OP code when updating an account", async () => {
     const account = accountDocument();
     const service = createAccountsService(

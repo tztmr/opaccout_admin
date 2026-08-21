@@ -18,6 +18,7 @@ import { AppError } from "../middleware/errors";
 import type { SecretCipher } from "./encryption";
 import type { DouyinCheckOptions, DouyinCheckResult } from "./douyin-check";
 import { calculateOpExpiry } from "./op-expiry";
+import { resolveAccountKind } from "./account-kind";
 import type { OpProfileCheckResult } from "./op-profile";
 import {
   applyOpProfileResult,
@@ -94,6 +95,8 @@ function toDto(
   return {
     _id: String(value._id),
     douyinId: value.douyinId,
+    accountKind: resolveAccountKind(value.accountKind),
+    email: value.email ?? "",
     secUid: value.secUid,
     registeredAt: value.registeredAt.toISOString(),
     opName: value.opName,
@@ -339,6 +342,18 @@ export function createAccountsService({
       const changedFields = Object.keys(patch);
       assertBannedSaleStatusChange(account.accountStatus, patch.saleStatus);
 
+      if ("email" in patch) {
+        if (resolveAccountKind(account.accountKind) === "email") {
+          if (!patch.email) {
+            throw new AppError(400, "EMAIL_REQUIRED", "邮箱不能为空");
+          }
+          account.email = patch.email;
+        } else {
+          account.email = "";
+          changedFields.splice(changedFields.indexOf("email"), 1);
+        }
+      }
+
       if ("accountPassword" in patch) {
         account.accountPassword = patch.accountPassword
           ? cipher.encrypt(patch.accountPassword)
@@ -362,7 +377,7 @@ export function createAccountsService({
         changedFields.push("opExpiresAt");
       }
       for (const [key, value] of Object.entries(patch)) {
-        if (key === "opSecret" || key === "accountPassword") continue;
+        if (key === "opSecret" || key === "accountPassword" || key === "email") continue;
         if (key === "registeredAt") {
           account.registeredAt = new Date(`${value}T00:00:00.000Z`);
         } else {

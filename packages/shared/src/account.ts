@@ -146,8 +146,8 @@ export type AccountListQuery = z.infer<typeof AccountListQuerySchema>;
 export type AccountDto = {
   _id: string;
   douyinId: string;
-  accountKind?: AccountKind;
-  email?: string;
+  accountKind: AccountKind;
+  email: string;
   secUid: string;
   registeredAt: string;
   opName: string;
