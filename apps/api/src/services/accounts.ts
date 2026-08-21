@@ -18,7 +18,7 @@ import { AppError } from "../middleware/errors";
 import type { SecretCipher } from "./encryption";
 import type { DouyinCheckOptions, DouyinCheckResult } from "./douyin-check";
 import { calculateOpExpiry } from "./op-expiry";
-import { resolveAccountKind } from "./account-kind";
+import { buildAccountKindFilter, resolveAccountKind } from "./account-kind";
 import type { OpProfileCheckResult } from "./op-profile";
 import {
   applyOpProfileResult,
@@ -242,7 +242,8 @@ export function createAccountsService({
 
     async list(rawQuery: unknown): Promise<AccountListResult> {
       const query = AccountListQuerySchema.parse(rawQuery);
-      const filter: Record<string, unknown> = {};
+      const accountKindFilter = buildAccountKindFilter(query.accountKind);
+      const filter: Record<string, unknown> = { ...accountKindFilter };
       const requestedDouyinIds = query.keyword
         ? extractBatchDouyinIds(query.keyword)
         : [];
@@ -277,6 +278,7 @@ export function createAccountsService({
       const matchedDouyinIdsPromise: Promise<string[]> = requestedDouyinIds.length
         ? model
             .distinct("douyinId", {
+              ...accountKindFilter,
               ...(filter.registeredAt ? { registeredAt: filter.registeredAt } : {}),
               ...(filter.saleStatus ? { saleStatus: filter.saleStatus } : {}),
               ...(filter.accountStatus ? { accountStatus: filter.accountStatus } : {}),
@@ -289,12 +291,16 @@ export function createAccountsService({
         findQuery.lean(),
         model.countDocuments(filter),
         model.aggregate<{ _id: string; count: number }>([
+          { $match: accountKindFilter },
           { $group: { _id: "$saleStatus", count: { $sum: 1 } } }
         ]),
         matchedDouyinIdsPromise
       ]);
       const statusMap = Object.fromEntries(statusCounts.map((item) => [item._id, item.count]));
-      const abnormal = await model.countDocuments({ accountStatus: { $in: ["violation", "banned", "op_invalid"] } });
+      const abnormal = await model.countDocuments({
+        ...accountKindFilter,
+        accountStatus: { $in: ["violation", "banned", "op_invalid"] }
+      });
       const responsePageSize: 20 | 50 | 100 | "all" =
         resolvedPageSize == null ? "all" : resolvedPageSize;
       const totalPages =
@@ -327,8 +333,12 @@ export function createAccountsService({
       };
     },
 
-    async owners(): Promise<{ items: string[] }> {
-      const values = await model.distinct("owner", { owner: { $ne: "" } });
+    async owners(rawQuery: unknown = {}): Promise<{ items: string[] }> {
+      const query = AccountListQuerySchema.parse(rawQuery);
+      const values = await model.distinct("owner", {
+        ...buildAccountKindFilter(query.accountKind),
+        owner: { $ne: "" }
+      });
       return {
         items: [...new Set(values.map((value) => value.trim()).filter(Boolean))]
           .sort((left, right) => left.localeCompare(right, "zh-CN"))

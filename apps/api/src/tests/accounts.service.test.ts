@@ -195,6 +195,31 @@ describe("accounts service", () => {
     expect(JSON.stringify(auditWrite.mock.calls)).not.toContain("douyin-pass");
   });
 
+  it("persists an email account kind and address on create", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument(value)
+    );
+    const service = createAccountsService(dependencies({ create }));
+
+    const result = await service.create({
+      douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "a|b|1782303418",
+      owner: "小王",
+      saleStatus: "unsold",
+      remark: ""
+    }, context);
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      accountKind: "email",
+      email: "mail@example.com"
+    }));
+    expect(result).toMatchObject({ accountKind: "email", email: "mail@example.com" });
+  });
+
   it("preserves an existing account password when an update omits it", async () => {
     const account = accountDocument({ accountPassword: encryptedPassword });
     const deps = dependencies({ findById: vi.fn(async () => account) });
@@ -278,6 +303,18 @@ describe("accounts service", () => {
       .rejects.toMatchObject({ status: 400, code: "EMAIL_REQUIRED" });
     expect(account.email).toBe("mail@example.com");
     expect(account.save).not.toHaveBeenCalled();
+  });
+
+  it("rejects account kind changes through PATCH", async () => {
+    const findById = vi.fn();
+    const service = createAccountsService(dependencies({ findById }));
+
+    await expect(service.update(
+      "507f1f77bcf86cd799439011",
+      { accountKind: "email" },
+      context
+    )).rejects.toBeDefined();
+    expect(findById).not.toHaveBeenCalled();
   });
 
   it("updates email accounts but keeps Google and historical account emails empty", async () => {
@@ -812,11 +849,66 @@ describe("accounts service", () => {
     await expect(service.owners()).resolves.toEqual({
       items: ["李四", "小王", "张三"]
     });
-    expect(distinct).toHaveBeenCalledWith("owner", { owner: { $ne: "" } });
+    expect(distinct).toHaveBeenCalledWith("owner", {
+      $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }],
+      owner: { $ne: "" }
+    });
   });
 
-  it("adds an exact owner to list filters", async () => {
-    const lean = vi.fn(async () => []);
+  it("scopes email lists, stats, batch keyword matches, and owners to email accounts", async () => {
+    const emailAccount = accountDocument({
+      accountKind: "email",
+      email: "mail@example.com",
+      douyinId: "94946893573"
+    });
+    const lean = vi.fn(async () => [emailAccount]);
+    const query = { sort: vi.fn(), skip: vi.fn(), limit: vi.fn(), lean };
+    query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    const find = vi.fn(() => query);
+    const countDocuments = vi.fn(async () => 1);
+    const aggregate = vi.fn(async () => [{ _id: "unsold", count: 1 }]);
+    const distinct = vi.fn(async (field: string) =>
+      field === "owner" ? ["邮箱归属人"] : ["94946893573"]
+    );
+    const service = createAccountsService(
+      dependencies({ find, countDocuments, aggregate, distinct })
+    );
+
+    const result = await service.list({
+      accountKind: "email",
+      keyword: "94946893573\n93180119509"
+    });
+
+    expect(result.items).toEqual([
+      expect.objectContaining({ accountKind: "email", email: "mail@example.com" })
+    ]);
+    expect(find).toHaveBeenCalledWith({ accountKind: "email", searchText: expect.any(RegExp) });
+    expect(countDocuments).toHaveBeenCalledWith({ accountKind: "email", searchText: expect.any(RegExp) });
+    expect(countDocuments).toHaveBeenCalledWith({
+      accountKind: "email",
+      accountStatus: { $in: ["violation", "banned", "op_invalid"] }
+    });
+    expect(aggregate).toHaveBeenCalledWith([
+      { $match: { accountKind: "email" } },
+      { $group: { _id: "$saleStatus", count: { $sum: 1 } } }
+    ]);
+    expect(distinct).toHaveBeenCalledWith("douyinId", {
+      accountKind: "email",
+      douyinId: { $in: ["94946893573", "93180119509"] }
+    });
+    await expect(service.owners({ accountKind: "email" })).resolves.toEqual({
+      items: ["邮箱归属人"]
+    });
+    expect(distinct).toHaveBeenCalledWith("owner", {
+      accountKind: "email",
+      owner: { $ne: "" }
+    });
+  });
+
+  it("includes historical Google records in kind-scoped owner lists", async () => {
+    const lean = vi.fn(async () => [accountDocument()]);
     const query = {
       sort: vi.fn(),
       skip: vi.fn(),
@@ -833,11 +925,20 @@ describe("accounts service", () => {
       dependencies({ find, countDocuments, aggregate })
     );
 
-    await service.list({ owner: "张三" });
+    const result = await service.list({ owner: "张三" });
 
-    expect(find).toHaveBeenCalledWith({ owner: "张三" });
+    expect(find).toHaveBeenCalledWith({
+      $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }],
+      owner: "张三"
+    });
     expect(query.limit).toHaveBeenCalledWith(20);
-    expect(countDocuments).toHaveBeenCalledWith({ owner: "张三" });
+    expect(countDocuments).toHaveBeenCalledWith({
+      $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }],
+      owner: "张三"
+    });
+    expect(result.items).toEqual([
+      expect.objectContaining({ accountKind: "google", email: "" })
+    ]);
   });
 
   it("matches each keyword line and defaults to ascending registered time order", async () => {
@@ -899,6 +1000,7 @@ describe("accounts service", () => {
     });
 
     expect(distinct).toHaveBeenCalledWith("douyinId", {
+      $or: [{ accountKind: "google" }, { accountKind: { $exists: false } }],
       douyinId: { $in: ["94946893573", "93180119509", "56946848178"] }
     });
     expect(result.searchSummary).toEqual({

@@ -58,7 +58,7 @@ describe("account routes", () => {
     expect(create).toHaveBeenCalledOnce();
   });
 
-  it("returns owner options before treating owners as an account id", async () => {
+  it("returns kind-scoped owner options before treating owners as an account id", async () => {
     const owners = vi.fn(async () => ({ items: ["小王", "张三"] }));
     const get = vi.fn();
     const accountService = {
@@ -87,11 +87,11 @@ describe("account routes", () => {
       password: "a-long-admin-password"
     });
 
-    const response = await agent.get("/api/accounts/owners");
+    const response = await agent.get("/api/accounts/owners?accountKind=email");
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ items: ["小王", "张三"] });
-    expect(owners).toHaveBeenCalledOnce();
+    expect(owners).toHaveBeenCalledWith({ accountKind: "email" });
     expect(get).not.toHaveBeenCalled();
   });
 
