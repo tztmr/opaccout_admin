@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type AccountInput,
   AccountPatchSchema,
   AccountInputSchema,
   AccountListQuerySchema,
@@ -37,6 +38,24 @@ describe("AccountInputSchema", () => {
 
   it("defaults historical input mobile to empty", () => {
     expect(AccountInputSchema.parse(validInput).mobile).toBe("");
+  });
+
+  it("keeps historical AccountInput callers compatible when mobile is omitted", () => {
+    const historicalInput: AccountInput = {
+      ...validInput,
+      opProject: "douyin",
+      registeredRegion: "中国.香港"
+    };
+    expect(historicalInput.mobile).toBeUndefined();
+  });
+
+  it("shares mobile normalization and validation with account patches", () => {
+    expect(AccountPatchSchema.parse({}).mobile).toBe("");
+    expect(AccountPatchSchema.parse({ mobile: "   " }).mobile).toBe("");
+    expect(AccountPatchSchema.parse({ mobile: " +86   13037174892 " }).mobile)
+      .toBe("+86 13037174892");
+    expect(AccountPatchSchema.safeParse({ mobile: "+86-13037174892" }).success).toBe(false);
+    expect(AccountPatchSchema.safeParse({ mobile: 8613037174892 }).success).toBe(false);
   });
 
   it("shares the strict email address schema used by account input and patches", () => {

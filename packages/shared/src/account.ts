@@ -102,7 +102,8 @@ export const AccountPatchSchema = AccountEditableFieldsSchema.partial()
   })
   .strict();
 
-export type AccountInput = z.infer<typeof AccountEditableFieldsSchema> & {
+export type AccountInput = Omit<z.infer<typeof AccountEditableFieldsSchema>, "mobile"> & {
+  mobile?: string;
   accountKind?: AccountKind;
   email?: string;
 };

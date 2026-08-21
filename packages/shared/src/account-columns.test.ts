@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_COLUMN_IDS,
+  ACCOUNT_COLUMN_LABELS,
   ACCOUNT_IMPORT_COLUMN_IDS,
   DEFAULT_ACCOUNT_COLUMN_ORDER,
   normalizeAccountColumnOrder
@@ -43,7 +44,32 @@ describe("account column contracts", () => {
     expect(order).not.toBe(DEFAULT_ACCOUNT_COLUMN_ORDER.google);
   });
 
-  it("uses only allowed business columns for imports", () => {
+  it("defines the stable import business column order", () => {
+    expect(ACCOUNT_IMPORT_COLUMN_IDS).toEqual([
+      "douyin", "email", "password", "date", "opname", "opsecret",
+      "mobile", "project", "owner", "region", "sale", "remark"
+    ]);
     expect(ACCOUNT_IMPORT_COLUMN_IDS.every((column) => ACCOUNT_COLUMN_IDS.includes(column))).toBe(true);
+  });
+
+  it("maps every stable business column to its Chinese label", () => {
+    expect(ACCOUNT_COLUMN_LABELS).toEqual({
+      douyin: "抖音号",
+      email: "邮箱",
+      password: "密码",
+      secuid: "sec_uid",
+      date: "注册时间",
+      opname: "OP名称",
+      opsecret: "OP卡密",
+      shortop: "短 OP",
+      mobile: "手机号",
+      project: "项目",
+      expiry: "OP到期时间",
+      owner: "归属人",
+      region: "注册地区",
+      sale: "售卖状态",
+      status: "账号状态",
+      remark: "备注"
+    });
   });
 });
