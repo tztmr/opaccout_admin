@@ -50,7 +50,7 @@ describe("AccountInputSchema", () => {
   });
 
   it("shares mobile normalization and validation with account patches", () => {
-    expect(AccountPatchSchema.parse({}).mobile).toBe("");
+    expect(AccountPatchSchema.parse({})).not.toHaveProperty("mobile");
     expect(AccountPatchSchema.parse({ mobile: "   " }).mobile).toBe("");
     expect(AccountPatchSchema.parse({ mobile: " +86   13037174892 " }).mobile)
       .toBe("+86 13037174892");

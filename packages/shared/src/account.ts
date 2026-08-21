@@ -22,7 +22,7 @@ export const AccountStatusSchema = z.enum(ACCOUNT_STATUSES);
 export const ACCOUNT_KINDS = ["google", "email"] as const;
 export const AccountKindSchema = z.enum(ACCOUNT_KINDS);
 export const EmailAddressSchema = z.string().trim().email("邮箱格式不正确").max(254);
-export const MobileSchema = z.preprocess(
+const MobileValueSchema = z.preprocess(
   (value) => typeof value === "string"
     ? value.trim().replace(/\s+/g, " ")
     : value,
@@ -33,7 +33,8 @@ export const MobileSchema = z.preprocess(
     ),
     "手机号格式不正确，请使用 +国际区号 本地号码"
   )
-).default("");
+);
+export const MobileSchema = MobileValueSchema.default("");
 
 export type SaleStatus = z.infer<typeof SaleStatusSchema>;
 export type AccountStatus = z.infer<typeof AccountStatusSchema>;
@@ -95,6 +96,7 @@ export const AccountInputSchema = AccountEditableFieldsSchema
 
 export const AccountPatchSchema = AccountEditableFieldsSchema.partial()
   .extend({
+    mobile: MobileValueSchema.optional(),
     email: z.union([
       z.literal(""),
       EmailAddressSchema
