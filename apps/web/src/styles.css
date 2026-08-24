@@ -86,7 +86,7 @@ tbody tr:hover { background: #fafcff; }
 .accounts-table .col-email { width: 108px; }
 .accounts-table .col-password { width: 82px; }
 .accounts-table .col-secuid { width: 104px; }
-.accounts-table .col-date { width: 78px; }
+.accounts-table .col-date { width: 96px; }
 .accounts-table .col-opname { width: 68px; }
 .accounts-table .col-opsecret { width: 64px; }
 .accounts-table .col-shortop { width: 120px; }

@@ -52,6 +52,14 @@ describe("global form control styles", () => {
     expect(mobileColumnRule).toMatch(/width:\s*\d+px;/);
   });
 
+  it("reserves enough width to show the full YYYY-MM-DD registration date", () => {
+    const dateColumnRule =
+      styles.match(/\.accounts-table \.col-date\s*\{[^}]+\}/)?.[0] ?? "";
+    const width = Number(dateColumnRule.match(/width:\s*(\d+)px;/)?.[1] ?? 0);
+
+    expect(width).toBeGreaterThanOrEqual(96);
+  });
+
   it("keeps table overflow and checkbox clipping scoped separately", () => {
     const tableScrollRule = styles.match(/\.table-scroll\s*\{[^}]+\}/)?.[0] ?? "";
     const checkCellRule = styles.match(/\.check-cell,[\s\S]*?\n}\n/)?.[0] ?? "";
