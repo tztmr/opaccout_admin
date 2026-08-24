@@ -75,6 +75,7 @@ tbody tr:hover { background: #fafcff; }
 .empty { height: 118px; text-align: center; color: var(--muted); }
 .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #657087; }
 .short-op-cell .link { margin-left: 8px; }
+.short-op-cell .short-op-value { margin-left: 0; }
 .accounts-table { min-width: 1410px; table-layout: fixed; }
 .accounts-table-email { min-width: 1518px; }
 .accounts-table th,

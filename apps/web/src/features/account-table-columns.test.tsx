@@ -90,15 +90,24 @@ describe("account table column registry", () => {
     expect(screen.getByRole("cell")).toHaveTextContent(row.mobile);
   });
 
-  it("preserves OP reveal and short-OP copy behavior in registry renderers", () => {
+  it("copies the share link from the short-OP value and keeps code copy separate", () => {
     const { reveal, copyText } = renderColumns(row, ["opsecret", "shortop"]);
 
     fireEvent.click(screen.getByRole("button", { name: /显示 OP 卡密/ }));
+    const linkCopy = screen.getByRole("button", {
+      name: "复制短 OP 链接 123456789"
+    });
+    expect(linkCopy).toHaveTextContent("123456789");
+    expect(linkCopy).not.toHaveTextContent("链接");
+    fireEvent.click(linkCopy);
     fireEvent.click(screen.getByRole("button", { name: "复制短 OP 123456789" }));
-    fireEvent.click(screen.getByRole("button", { name: "复制短 OP 链接 123456789" }));
 
     expect(reveal).toHaveBeenCalledWith(row._id);
-    expect(copyText).toHaveBeenNthCalledWith(1, row.shortOpCode, "短 OP 已复制");
-    expect(copyText).toHaveBeenNthCalledWith(2, `https://op.tztright.qzz.io/${row.shortOpCode}`, "短 OP 链接已复制");
+    expect(copyText).toHaveBeenNthCalledWith(
+      1,
+      `https://op.tztright.qzz.io/${row.shortOpCode}`,
+      "短 OP 链接已复制"
+    );
+    expect(copyText).toHaveBeenNthCalledWith(2, row.shortOpCode, "短 OP 已复制");
   });
 });

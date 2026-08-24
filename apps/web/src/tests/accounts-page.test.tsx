@@ -665,7 +665,12 @@ describe("accounts page", () => {
 
     await user.click(screen.getByRole("button", { name: "复制短 OP 123456789" }));
     expect(writeText).toHaveBeenLastCalledWith("123456789");
-    await user.click(screen.getByRole("button", { name: "复制短 OP 链接 123456789" }));
+    const linkCopy = screen.getByRole("button", {
+      name: "复制短 OP 链接 123456789"
+    });
+    expect(linkCopy).toHaveTextContent("123456789");
+    expect(linkCopy).not.toHaveTextContent("链接");
+    await user.click(linkCopy);
     expect(writeText).toHaveBeenLastCalledWith("https://op.tztright.qzz.io/123456789");
 
     await user.click(screen.getByRole("button", { name: "新增谷歌账号" }));

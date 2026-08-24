@@ -60,7 +60,7 @@ export const ACCOUNT_TABLE_COLUMNS: Record<AccountColumnId, AccountTableColumnDe
   },
   shortop: {
     render: (row, actions) => row.shortOpCode
-      ? <span className="short-op-cell"><span className="mono">{row.shortOpCode}</span><button type="button" className="link" aria-label={`复制短 OP ${row.shortOpCode}`} onClick={() => actions.copyText(row.shortOpCode, "短 OP 已复制")}>复制</button><button type="button" className="link" aria-label={`复制短 OP 链接 ${row.shortOpCode}`} onClick={() => actions.copyText(`${PUBLIC_OP_ORIGIN}/${row.shortOpCode}`, "短 OP 链接已复制")}>链接</button></span>
+      ? <span className="short-op-cell"><button type="button" className="link mono short-op-value" aria-label={`复制短 OP 链接 ${row.shortOpCode}`} onClick={() => actions.copyText(`${PUBLIC_OP_ORIGIN}/${row.shortOpCode}`, "短 OP 链接已复制")}>{row.shortOpCode}</button><button type="button" className="link" aria-label={`复制短 OP ${row.shortOpCode}`} onClick={() => actions.copyText(row.shortOpCode, "短 OP 已复制")}>复制</button></span>
       : "—"
   },
   mobile: {
