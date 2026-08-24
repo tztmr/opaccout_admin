@@ -122,7 +122,7 @@ const SortDirectionSchema = z.preprocess((value) => {
   return value;
 }, z.enum(["asc", "desc"]));
 
-export const ACCOUNT_PAGE_SIZE_OPTIONS = [20, 50, 100] as const;
+export const ACCOUNT_PAGE_SIZE_OPTIONS = [5, 10, 20, 30, 40, 50, 100] as const;
 export const ACCOUNT_PAGE_SIZE_ALL = "all" as const;
 
 const AccountPageSizeSchema = z.preprocess((value) => {
@@ -137,7 +137,11 @@ const AccountPageSizeSchema = z.preprocess((value) => {
   return value;
 }, z.union([
   z.literal("all"),
+  z.literal(5),
+  z.literal(10),
   z.literal(20),
+  z.literal(30),
+  z.literal(40),
   z.literal(50),
   z.literal(100)
 ]));

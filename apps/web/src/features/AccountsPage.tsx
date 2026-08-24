@@ -371,6 +371,7 @@ export function AccountsPage({ accountKind }: { accountKind: AccountKind }) {
       await api("/api/accounts/batch-update",{method:"POST",body:JSON.stringify({ids,remark:batchDialog.value})});
       setMessage(`已修改 ${ids.length} 条备注`);
     }
+    setSelected(new Set());
     setBatchDialog(null);
     void client.invalidateQueries({queryKey:["accounts", accountKind]});
   };

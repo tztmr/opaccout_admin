@@ -284,15 +284,20 @@ describe("AccountListQuery pageSize", () => {
     expect(AccountListQuerySchema.parse({}).pageSize).toBe(20);
   });
 
-  it("accepts page sizes 20/50/100/all", () => {
-    expect(AccountListQuerySchema.parse({ pageSize: 20 }).pageSize).toBe(20);
-    expect(AccountListQuerySchema.parse({ pageSize: "50" }).pageSize).toBe(50);
-    expect(AccountListQuerySchema.parse({ pageSize: 100 }).pageSize).toBe(100);
+  it.each([5, 10, 20, 30, 40, 50, 100])(
+    "accepts page size %s",
+    (pageSize) => {
+      expect(AccountListQuerySchema.parse({ pageSize: String(pageSize) }).pageSize)
+        .toBe(pageSize);
+    }
+  );
+
+  it("accepts all as a page size", () => {
     expect(AccountListQuerySchema.parse({ pageSize: "all" }).pageSize).toBe("all");
   });
 
   it("rejects unsupported page sizes", () => {
-    expect(() => AccountListQuerySchema.parse({ pageSize: 30 })).toThrow();
+    expect(() => AccountListQuerySchema.parse({ pageSize: 15 })).toThrow();
     expect(() => AccountListQuerySchema.parse({ pageSize: "200" })).toThrow();
   });
 });

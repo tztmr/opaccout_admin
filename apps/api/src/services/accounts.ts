@@ -269,7 +269,7 @@ export function createAccountsService({
       }
       const pageSize = query.pageSize;
       const isAllPageSize = pageSize === "all";
-      const resolvedPageSize: 20 | 50 | 100 | null = isAllPageSize
+      const resolvedPageSize = isAllPageSize
         ? null
         : pageSize;
       const page = isAllPageSize ? 1 : query.page;
@@ -308,7 +308,7 @@ export function createAccountsService({
         ...accountKindFilter,
         accountStatus: { $in: ["violation", "banned", "op_invalid"] }
       });
-      const responsePageSize: 20 | 50 | 100 | "all" =
+      const responsePageSize =
         resolvedPageSize == null ? "all" : resolvedPageSize;
       const totalPages =
         resolvedPageSize == null

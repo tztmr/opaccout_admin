@@ -776,6 +776,40 @@ describe("accounts page", () => {
     expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
   });
 
+  it("offers 5/10/20/30/40/50/100 page sizes and requests the selected size", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path.startsWith("/api/accounts?")) {
+        const pageSize = new URLSearchParams(path.split("?")[1] ?? "").get("pageSize") ?? "20";
+        return json({
+          items: [],
+          page: 1,
+          pageSize: pageSize === "all" ? "all" : Number(pageSize),
+          total: 0,
+          totalPages: 1,
+          stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderPage();
+
+    const pageSizeSelect = await screen.findByRole("combobox", { name: "每页条数" });
+    expect(within(pageSizeSelect).getAllByRole("option").map((option) => option.getAttribute("value")))
+      .toEqual(["5", "10", "20", "30", "40", "50", "100", "all"]);
+
+    await user.selectOptions(pageSizeSelect, "5");
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes("pageSize=5")))
+        .toBe(true);
+    });
+    expect(pageSizeSelect).toHaveValue("5");
+  });
+
   it("submits multiline keyword searches through the account query", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
@@ -1707,6 +1741,8 @@ describe("accounts page", () => {
       );
     });
     expect(await screen.findByText(/已修改 1 条账号状态/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).not.toBeChecked();
+    expect(screen.queryByText(/已选择 1 条/)).not.toBeInTheDocument();
   });
 
   it("shows failed batch recheck count and keeps only failed accounts selected", async () => {
@@ -1925,7 +1961,7 @@ describe("accounts page", () => {
       );
     });
 
-    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).toBeChecked();
-    expect(screen.getByText(/已选择 1 条/)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "选择账号 94946893573" })).not.toBeChecked();
+    expect(screen.queryByText(/已选择 1 条/)).not.toBeInTheDocument();
   });
 });
