@@ -4,6 +4,9 @@ import { z } from "zod";
 export const DEFAULT_DOUYIN_PROFILE_API_URL = new URL(
   "https://imdesktop.douyin.com/aweme/v1/web/user/profile/other/"
 );
+export const DEFAULT_DOUYIN_UNIQUE_ID_API_URL = new URL(
+  "https://www.douyin.com/web/api/v2/user/info/"
+);
 
 const OuterResponseSchema = z.object({
   status: z.number().int(),
@@ -39,6 +42,13 @@ const InnerUserInfoSchema = z.object({
 const InnerResponseSchema = z.object({
   status_code: z.number().int(),
   user_info: InnerUserInfoSchema
+});
+
+const UniqueIdResponseSchema = z.object({
+  status_code: z.number().int(),
+  user_info: z.object({
+    sec_uid: z.string().min(1)
+  })
 });
 
 const ProfileOtherResponseSchema = z.object({
@@ -205,14 +215,30 @@ export function parseDouyinResponse(
   return toCheckResult(inner.user_info, now);
 }
 
+export function parseDouyinUniqueIdResponse(value: unknown): string {
+  let parsed: z.infer<typeof UniqueIdResponseSchema>;
+  try {
+    parsed = UniqueIdResponseSchema.parse(value);
+  } catch {
+    throw new DouyinCheckError("DOUYIN_RESPONSE_INVALID");
+  }
+
+  if (parsed.status_code !== 0) {
+    throw new DouyinCheckError("DOUYIN_INNER_STATUS_INVALID");
+  }
+  return parsed.user_info.sec_uid;
+}
+
 type DouyinCheckerOptions = {
   baseUrl: URL;
+  uniqueIdUrl?: URL;
   profileUrl?: URL;
   fetchImpl?: typeof fetch;
   now?: () => Date;
   timeoutMs?: number;
   maxAttempts?: number;
   retryDelayMs?: number;
+  random?: () => number;
 };
 
 function buildProfileOtherUrl(profileUrl: URL, secUid: string): URL {
@@ -233,18 +259,61 @@ function buildProfileOtherUrl(profileUrl: URL, secUid: string): URL {
   return requestUrl;
 }
 
+function randomInteger(random: () => number, min: number, max: number): number {
+  return Math.floor(random() * (max - min + 1)) + min;
+}
+
+function buildRandomDouyinWebHeaders(
+  random: () => number
+): Record<string, string> {
+  const operatingSystems = [
+    "Macintosh; Intel Mac OS X 10_15_7",
+    "Windows NT 10.0; Win64; x64",
+    "X11; Linux x86_64"
+  ];
+  const operatingSystem =
+    operatingSystems[randomInteger(random, 0, operatingSystems.length - 1)];
+  const chromeMajor = randomInteger(random, 120, 131);
+  const ttwid = Array.from({ length: 4 }, () =>
+    random().toString(36).slice(2)
+  ).join("");
+
+  return {
+    accept: "*/*",
+    "accept-encoding": "gzip, deflate, br",
+    "accept-language": "zh-CN,zh;q=0.9,en;q=0.8",
+    connection: "keep-alive",
+    cookie: `ttwid=${ttwid}`,
+    referer: "https://www.douyin.com",
+    "sec-fetch-dest": "empty",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+    "user-agent": `Mozilla/5.0 (${operatingSystem}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${chromeMajor}.0.0.0 Safari/537.36`
+  };
+}
+
+function buildUniqueIdUrl(uniqueIdUrl: URL, douyinId: string): URL {
+  const requestUrl = new URL(uniqueIdUrl.href);
+  requestUrl.searchParams.set("sec_uid", "");
+  requestUrl.searchParams.set("unique_id", douyinId);
+  return requestUrl;
+}
+
 export function createDouyinChecker({
   baseUrl,
+  uniqueIdUrl = DEFAULT_DOUYIN_UNIQUE_ID_API_URL,
   profileUrl = DEFAULT_DOUYIN_PROFILE_API_URL,
   fetchImpl = fetch,
   now = () => new Date(),
   timeoutMs = 10_000,
   maxAttempts = 3,
-  retryDelayMs = 400
+  retryDelayMs = 400,
+  random = Math.random
 }: DouyinCheckerOptions) {
   async function requestJson(
     requestUrl: URL,
-    callerSignal?: AbortSignal
+    callerSignal?: AbortSignal,
+    requestHeaderFactory?: () => Record<string, string>
   ): Promise<unknown> {
     let lastRetryableError: DouyinCheckError | undefined;
     const attempts = Math.max(1, maxAttempts);
@@ -261,7 +330,8 @@ export function createDouyinChecker({
           headers: {
             accept: "application/json, text/plain, */*",
             "user-agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            ...(requestHeaderFactory?.() ?? {})
           },
           signal
         });
@@ -305,7 +375,21 @@ export function createDouyinChecker({
     );
   }
 
-  async function requestByNum(
+  async function requestOfficialByNum(
+    num: string,
+    callerSignal?: AbortSignal
+  ): Promise<string> {
+    const requestUrl = buildUniqueIdUrl(uniqueIdUrl, num);
+    return parseDouyinUniqueIdResponse(
+      await requestJson(
+        requestUrl,
+        callerSignal,
+        () => buildRandomDouyinWebHeaders(random)
+      )
+    );
+  }
+
+  async function requestThirdPartyByNum(
     num: string,
     callerSignal?: AbortSignal
   ): Promise<DouyinCheckResult> {
@@ -341,12 +425,19 @@ export function createDouyinChecker({
       try {
         return await requestBySecUid(existingSecUid, callerSignal);
       } catch (profileError) {
-        // Fall back to num check so accounts remain recheckable if profile API fails.
+        // Recover through Douyin directly before using the slower third-party fallback.
+        let resolvedSecUid = existingSecUid;
         try {
-          const byNum = await requestByNum(douyinId, callerSignal);
+          resolvedSecUid = await requestOfficialByNum(douyinId, callerSignal);
+        } catch {
+          // Continue to the status-capable third-party fallback.
+        }
+
+        try {
+          const byNum = await requestThirdPartyByNum(douyinId, callerSignal);
           return {
             ...byNum,
-            secUid: byNum.secUid || existingSecUid
+            secUid: byNum.secUid || resolvedSecUid
           };
         } catch {
           throw profileError;
@@ -354,29 +445,34 @@ export function createDouyinChecker({
       }
     }
 
-    // Primary path: check by Douyin unique_id (num) only.
+    // Resolve sec_uid directly from Douyin before considering the slower third party.
+    let resolvedSecUid: string;
     try {
-      return await requestByNum(douyinId, callerSignal);
+      resolvedSecUid = await requestOfficialByNum(douyinId, callerSignal);
     } catch (primaryError) {
-      // Fallback: recover sec_uid via num, then recheck through profile/other.
-      let resolved: DouyinCheckResult;
       try {
-        resolved = await requestByNum(douyinId, callerSignal);
+        return await requestThirdPartyByNum(douyinId, callerSignal);
       } catch {
         throw primaryError;
       }
+    }
 
-      if (!resolved.secUid) return resolved;
-
+    try {
+      const rechecked = await requestBySecUid(resolvedSecUid, callerSignal);
+      return {
+        ...rechecked,
+        secUid: rechecked.secUid || resolvedSecUid,
+        checkedAt: now()
+      };
+    } catch (profileError) {
       try {
-        const rechecked = await requestBySecUid(resolved.secUid, callerSignal);
+        const fallback = await requestThirdPartyByNum(douyinId, callerSignal);
         return {
-          ...rechecked,
-          secUid: rechecked.secUid || resolved.secUid,
-          checkedAt: now()
+          ...fallback,
+          secUid: fallback.secUid || resolvedSecUid
         };
       } catch {
-        return resolved;
+        throw profileError;
       }
     }
   };
