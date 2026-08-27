@@ -59,6 +59,64 @@ describe("processImportRow", () => {
     expect(accounts.update).not.toHaveBeenCalled();
   });
 
+  it("creates a new email row without OP processing when its secret is blank", async () => {
+    const accounts = accountServiceStub();
+    const emailInput: AccountInput = {
+      ...input,
+      accountKind: "email",
+      email: "mail@example.com",
+      opName: "",
+      opSecret: ""
+    };
+    vi.mocked(accounts.create).mockResolvedValueOnce({
+      _id: "created-id",
+      opName: ""
+    } as never);
+
+    const result = await processImportRow(
+      accounts,
+      emailInput,
+      "skip",
+      context,
+      vi.fn(async () => null)
+    );
+
+    expect(result).toBe("created");
+    expect(accounts.create).toHaveBeenCalledWith(
+      emailInput,
+      context,
+      { allowMissingOpSecret: true }
+    );
+    expect(accounts.update).not.toHaveBeenCalled();
+    expect(accounts.recheckOp).not.toHaveBeenCalled();
+  });
+
+  it("preserves an existing email OP when an update import leaves the secret blank", async () => {
+    const accounts = accountServiceStub();
+    const emailInput: AccountInput = {
+      ...input,
+      accountKind: "email",
+      email: "mail@example.com",
+      opSecret: ""
+    };
+
+    const result = await processImportRow(
+      accounts,
+      emailInput,
+      "update",
+      context,
+      vi.fn(async () => ({ _id: "email-id", accountKind: "email" as const }))
+    );
+
+    expect(result).toBe("updated");
+    expect(accounts.update).toHaveBeenCalledWith(
+      "email-id",
+      expect.not.objectContaining({ opSecret: expect.anything() }),
+      context
+    );
+    expect(accounts.recheckOp).not.toHaveBeenCalled();
+  });
+
   it("forwards parsed mobile values through create and update", async () => {
     const mobileInput = { ...input, mobile: "+86 13037174892" };
     const createAccounts = accountServiceStub();

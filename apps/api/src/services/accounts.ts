@@ -1,5 +1,6 @@
 import {
   AccountPatchSchema,
+  AccountImportInputSchema,
   AccountInputSchema,
   AccountListQuerySchema,
   type AccountDto,
@@ -103,13 +104,13 @@ function toDto(
     secUid: value.secUid,
     registeredAt: value.registeredAt.toISOString(),
     opName: value.opName,
-    hasOpSecret: true,
+    hasOpSecret: Boolean(value.opSecret),
     accountPassword: value.accountPassword
       ? cipher.decrypt(value.accountPassword)
       : "",
-    shortOpCode: value.shortOpCode!,
+    shortOpCode: value.shortOpCode ?? "",
     opProject: value.opProject ?? DEFAULT_OP_PROJECT,
-    opExpiresAt: value.opExpiresAt.toISOString(),
+    opExpiresAt: value.opExpiresAt?.toISOString() ?? "",
     owner: value.owner,
     registeredRegion: value.registeredRegion || DEFAULT_REGISTERED_REGION,
     saleStatus: value.saleStatus,
@@ -200,18 +201,26 @@ export function createAccountsService({
       return checkDouyinId(douyinId);
     },
 
-    async create(rawInput: unknown, context: AuditContext): Promise<AccountDto> {
-      const input = AccountInputSchema.parse(rawInput);
+    async create(
+      rawInput: unknown,
+      context: AuditContext,
+      options: { allowMissingOpSecret?: boolean } = {}
+    ): Promise<AccountDto> {
+      const input = options.allowMissingOpSecret
+        ? AccountImportInputSchema.parse(rawInput)
+        : AccountInputSchema.parse(rawInput);
       const accountKind = resolveAccountKind(input.accountKind);
       const [detected, opResult] = await Promise.all([
         detectDouyinStatus(checkDouyinId, input.douyinId),
-        checkOpProfile(input.opSecret)
+        input.opSecret ? checkOpProfile(input.opSecret) : Promise.resolve(undefined)
       ]);
-      const prepared = applyOpProfileResult(input, opResult);
-      const { accountPassword, ...preparedFields } = prepared;
-      const accountStatus = resolveAccountStatus(detected.accountStatus, opResult);
+      const prepared = opResult ? applyOpProfileResult(input, opResult) : input;
+      const { accountPassword, opSecret, ...preparedFields } = prepared;
+      const accountStatus = opResult
+        ? resolveAccountStatus(detected.accountStatus, opResult)
+        : detected.accountStatus;
       try {
-        const created = await createAccountWithShortOpRetry(model, {
+        const payload = {
           ...preparedFields,
           registeredAt: new Date(`${prepared.registeredAt}T00:00:00.000Z`),
           secUid: detected.secUid,
@@ -221,12 +230,19 @@ export function createAccountsService({
             accountStatus,
             prepared.saleStatus
           ),
-          opSecret: cipher.encrypt(prepared.opSecret),
-          opExpiresAt: calculateOpExpiry(prepared.opSecret),
+          ...(opSecret
+            ? {
+                opSecret: cipher.encrypt(opSecret),
+                opExpiresAt: calculateOpExpiry(opSecret)
+              }
+            : {}),
           accountPassword: accountPassword
             ? cipher.encrypt(accountPassword)
             : undefined
-        });
+        };
+        const created = opSecret
+          ? await createAccountWithShortOpRetry(model, payload)
+          : await model.create(payload);
         await writeAudit(
           "account.created",
           [String(created._id)],
@@ -419,7 +435,7 @@ export function createAccountsService({
       const account = await model.findById(id);
       if (!account) throw new AppError(404, "ACCOUNT_NOT_FOUND", "账号不存在");
       await writeAudit("account.secret_revealed", [id], ["opSecret"], context);
-      return { opSecret: cipher.decrypt(account.opSecret) };
+      return { opSecret: account.opSecret ? cipher.decrypt(account.opSecret) : "" };
     },
 
     async recheckOp(id: string, context: AuditContext): Promise<AccountDto> {
@@ -429,6 +445,9 @@ export function createAccountsService({
         throw new AppError(409, "BANNED_ACCOUNT", "封禁账号无需重新检测 OP");
       }
 
+      if (!account.opSecret) {
+        throw new AppError(409, "OP_SECRET_MISSING", "账号未填写 OP 卡密");
+      }
       const opSecret = cipher.decrypt(account.opSecret);
       const opResult = await checkOpProfile(opSecret);
       const prepared = applyOpProfileResult({

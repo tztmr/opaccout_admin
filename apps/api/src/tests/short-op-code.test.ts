@@ -1,5 +1,5 @@
 import type { Model } from "mongoose";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AccountRecord } from "../models/account";
 import {
   backfillMissingShortOps,
@@ -136,5 +136,23 @@ describe("short OP code allocation", () => {
     } as unknown as Model<AccountRecord>;
 
     await expect(backfillMissingShortOps(model)).resolves.toEqual({ updated: 0 });
+  });
+
+  it("queries only OP-backed accounts when backfilling short codes", async () => {
+    const find = vi.fn(() => ({ cursor: async function* () {} }));
+    const model = {
+      find,
+      updateOne: vi.fn()
+    } as unknown as Model<AccountRecord>;
+
+    await backfillMissingShortOps(model);
+
+    expect(find).toHaveBeenCalledWith({
+      opSecret: { $exists: true },
+      $or: [
+        { shortOpCode: { $exists: false } },
+        { opProject: { $exists: false } }
+      ]
+    });
   });
 });

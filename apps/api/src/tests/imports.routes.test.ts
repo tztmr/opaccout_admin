@@ -93,6 +93,41 @@ describe("imports routes", () => {
     });
   });
 
+  it("stages a blank email OP secret without masking or encrypting it", async () => {
+    const create = vi.spyOn(ImportPreviewModel, "create").mockResolvedValue({
+      id: "preview-id"
+    } as never);
+    const cipher = createSecretCipher(randomBytes(32));
+    const encrypt = vi.spyOn(cipher, "encrypt");
+    const adminAuth = await createTestAdminAuth({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+    const app = createApp({ config: testConfig, adminAuth, cipher });
+    const agent = new request.agent(app);
+    await agent.post("/api/auth/login").send({
+      username: "admin",
+      password: "a-long-admin-password"
+    });
+
+    const csv = [
+      "抖音号,邮箱,密码,注册时间,OP卡密,归属人",
+      "94946893573,mail@example.com,preview-pass,2026-07-27,,小王"
+    ].join("\n");
+    const response = await agent
+      .post("/api/imports/preview")
+      .field("accountKind", "email")
+      .attach("file", Buffer.from(csv, "utf8"), "accounts.csv");
+
+    expect(response.status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      validRows: 1,
+      stagedRows: [expect.not.objectContaining({ opSecret: expect.anything() })]
+    }));
+    expect(response.body.rows[0]).toMatchObject({ opSecret: "" });
+    expect(encrypt).not.toHaveBeenCalledWith("");
+  });
+
   it("persists the preview kind onto its import job", async () => {
     const preview = {
       id: "preview-id",

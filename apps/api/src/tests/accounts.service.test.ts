@@ -240,6 +240,61 @@ describe("accounts service", () => {
     }));
   });
 
+  it("creates an imported email account without OP-derived fields when explicitly allowed", async () => {
+    const create = vi.fn(async (value: Record<string, unknown>) =>
+      accountDocument({
+        ...value,
+        opSecret: undefined,
+        opExpiresAt: undefined,
+        shortOpCode: undefined
+      })
+    );
+    const deps = dependencies({ create });
+    const service = createAccountsService(deps);
+
+    const result = await service.create({
+      douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "",
+      owner: "小王",
+      saleStatus: "unsold",
+      remark: ""
+    }, context, { allowMissingOpSecret: true });
+
+    expect(deps.checkOpProfile).not.toHaveBeenCalled();
+    expect(deps.cipher.encrypt).not.toHaveBeenCalledWith("");
+    expect(create).toHaveBeenCalledWith(expect.not.objectContaining({
+      opSecret: expect.anything(),
+      opExpiresAt: expect.anything(),
+      shortOpCode: expect.anything()
+    }));
+    expect(result).toMatchObject({
+      hasOpSecret: false,
+      shortOpCode: "",
+      opExpiresAt: ""
+    });
+  });
+
+  it("keeps a missing OP secret invalid outside the email import path", async () => {
+    const deps = dependencies({ create: vi.fn() });
+    const service = createAccountsService(deps);
+
+    await expect(service.create({
+      douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
+      registeredAt: "2026-07-27",
+      opName: "",
+      opSecret: "",
+      owner: "小王",
+      saleStatus: "unsold",
+      remark: ""
+    }, context)).rejects.toThrow("OP卡密不能为空");
+  });
+
   it("preserves an existing account password when an update omits it", async () => {
     const account = accountDocument({ accountPassword: encryptedPassword });
     const deps = dependencies({ findById: vi.fn(async () => account) });

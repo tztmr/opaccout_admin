@@ -9,7 +9,7 @@ import type { EncryptedValue, SecretCipher } from "./encryption";
 import { resolveAccountKind } from "./account-kind";
 
 type StagedRow = Omit<AccountInput, "opSecret" | "accountPassword"> & {
-  opSecret: EncryptedValue;
+  opSecret?: EncryptedValue;
   accountPassword?: EncryptedValue | string | undefined;
 };
 export type ImportRowOutcome = "created" | "updated" | "skipped";
@@ -109,19 +109,27 @@ export async function processImportRow(
     }
     if (duplicateStrategy === "skip") return "skipped";
     const id = String(existing._id);
-    const { accountKind: _accountKind, ...patch } = input;
+    const { accountKind: _accountKind, ...rawPatch } = input;
+    const { opSecret: _blankOpSecret, ...patchWithoutOpSecret } = rawPatch;
+    const patch = input.opSecret ? rawPatch : patchWithoutOpSecret;
     await runImportAttempt(() => accounts.update(id, patch, context));
     const rechecked = await runImportAttempt(() => accounts.recheck(id, context));
     if (rechecked.accountStatus === "banned") {
       await ensureImportedOpName(accounts, id, rechecked.opName, context);
       return "updated";
     }
+    if (!input.opSecret) return "updated";
     const opChecked = await accounts.recheckOp(id, context);
     await ensureImportedOpName(accounts, id, opChecked.opName, context);
     return "updated";
   }
-  const created = await runImportAttempt(() => accounts.create(input, context));
-  await ensureImportedOpName(accounts, created._id, created.opName, context);
+  const allowMissingOpSecret = input.accountKind === "email" && !input.opSecret;
+  const created = await runImportAttempt(() => allowMissingOpSecret
+    ? accounts.create(input, context, { allowMissingOpSecret: true })
+    : accounts.create(input, context));
+  if (input.opSecret) {
+    await ensureImportedOpName(accounts, created._id, created.opName, context);
+  }
   return "created";
 }
 
@@ -156,7 +164,7 @@ export async function processNextImportJob(
       accountKind,
       email: accountKind === "email" ? raw.email ?? "" : "",
       mobile: raw.mobile ?? "",
-      opSecret: cipher.decrypt(raw.opSecret),
+      opSecret: raw.opSecret ? cipher.decrypt(raw.opSecret) : "",
       accountPassword: typeof raw.accountPassword === "string"
         ? raw.accountPassword
         : raw.accountPassword

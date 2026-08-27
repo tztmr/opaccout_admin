@@ -330,7 +330,7 @@ export function ImportsPage() {
       <form className={`upload-card ${dragActive?"upload-card-active":""}`} onSubmit={submit} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
         <div className="upload-icon"><UploadCloud size={28}/></div>
         <h2>上传账号文件</h2>
-        <p>文件最大 10 MB。OP卡密只在服务端加密暂存，预览不显示明文。支持把文件直接拖到这里。</p>
+        <p>文件最大 10 MB。OP卡密只在服务端加密暂存，预览不显示明文。{accountKind === "email" && "抖音邮箱号的 OP卡密可以留空。"}支持把文件直接拖到这里。</p>
         <label className="file-picker"><input key={fileInputKey} name="file" type="file" accept=".xlsx,.xls,.csv" required disabled={fileActionPending}/><span>选择文件</span></label>
         <button className="primary" disabled={fileActionPending}>{upload.isPending ? "解析中…" : "解析并预览"}</button>
       </form>

@@ -46,7 +46,7 @@ export async function backfillOpExpiries(
   for await (const account of cursor) {
     const record = account as OpExpiryBackfillRecord;
     if (!record.opSecret) {
-      failed += 1;
+      unchanged += 1;
       continue;
     }
 

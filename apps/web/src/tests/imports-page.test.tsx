@@ -143,6 +143,7 @@ describe("imports page", () => {
       "href",
       "/api/imports/template?format=xlsx&accountKind=email"
     );
+    expect(screen.getAllByText(/抖音邮箱号的 OP卡密可以留空/).length).toBeGreaterThan(0);
 
     const file = new File(["抖音号,邮箱\n94946893573,email@example.test"], "email-accounts.csv", { type: "text/csv" });
     const uploadCard = screen.getByText("上传账号文件").closest("form");

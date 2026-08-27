@@ -24,6 +24,26 @@ describe("calculateOpExpiry", () => {
 });
 
 describe("backfillOpExpiries", () => {
+  it("treats an intentionally missing OP secret as unchanged", async () => {
+    const model = {
+      find: () => ({
+        cursor: async function* () {
+          yield { _id: "without-op" };
+        }
+      }),
+      updateOne: vi.fn()
+    };
+    const cipher = { encrypt: vi.fn(), decrypt: vi.fn() };
+
+    await expect(backfillOpExpiries(model as never, cipher)).resolves.toEqual({
+      updated: 0,
+      unchanged: 1,
+      failed: 0
+    });
+    expect(cipher.decrypt).not.toHaveBeenCalled();
+    expect(model.updateOne).not.toHaveBeenCalled();
+  });
+
   it("rewrites 60-day local expiries to 90 days from the OP auth_time", async () => {
     const updates: Array<{ filter: unknown; update: unknown }> = [];
     const model = {

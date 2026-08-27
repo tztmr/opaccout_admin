@@ -52,11 +52,11 @@ export const ACCOUNT_TABLE_COLUMNS: Record<AccountColumnId, AccountTableColumnDe
     render: (row) => <span title={row.opName || undefined}>{row.opName || "—"}</span>
   },
   opsecret: {
-    render: (row, actions) => (
+    render: (row, actions) => row.hasOpSecret ? (
       <button type="button" className="link" aria-label="显示 OP 卡密" onClick={() => actions.reveal(row._id)}>
         •••••• <Eye size={14} aria-hidden="true" />
       </button>
-    )
+    ) : "—"
   },
   shortop: {
     render: (row, actions) => row.shortOpCode
@@ -70,7 +70,9 @@ export const ACCOUNT_TABLE_COLUMNS: Record<AccountColumnId, AccountTableColumnDe
     render: (row) => OP_PROJECTS[row.opProject]?.name ?? "未知项目"
   },
   expiry: {
-    render: (row) => new Date(row.opExpiresAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+    render: (row) => row.opExpiresAt
+      ? new Date(row.opExpiresAt).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
+      : "—"
   },
   owner: {
     render: (row) => row.owner

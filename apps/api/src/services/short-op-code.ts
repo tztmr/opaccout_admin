@@ -62,6 +62,7 @@ export async function backfillMissingShortOps(
   let updated = 0;
   const cursor = model
     .find({
+      opSecret: { $exists: true },
       $or: [
         { shortOpCode: { $exists: false } },
         { opProject: { $exists: false } }

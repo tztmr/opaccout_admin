@@ -110,4 +110,19 @@ describe("account table column registry", () => {
     );
     expect(copyText).toHaveBeenNthCalledWith(2, row.shortOpCode, "短 OP 已复制");
   });
+
+  it("renders missing OP fields as dashes without a reveal action", () => {
+    const withoutOp: AccountDto = {
+      ...row,
+      opName: "",
+      hasOpSecret: false,
+      shortOpCode: "",
+      opExpiresAt: ""
+    };
+    const { reveal } = renderColumns(withoutOp, ["opname", "opsecret", "shortop", "expiry"]);
+
+    expect(screen.queryByRole("button", { name: /显示 OP 卡密/ })).not.toBeInTheDocument();
+    expect(screen.getAllByText("—")).toHaveLength(4);
+    expect(reveal).not.toHaveBeenCalled();
+  });
 });

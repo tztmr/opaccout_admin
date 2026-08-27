@@ -94,6 +94,31 @@ export const AccountInputSchema = AccountEditableFieldsSchema
     email: value.accountKind === "email" ? value.email : ""
   }));
 
+export const AccountImportInputSchema = AccountEditableFieldsSchema
+  .extend({
+    opSecret: z.string().max(4096),
+    accountKind: AccountKindSchema.default("google"),
+    email: z.string().trim().max(254).default("")
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.accountKind === "email") {
+      if (!value.email) {
+        context.addIssue({ code: "custom", path: ["email"], message: "邮箱不能为空" });
+      } else if (!EmailAddressSchema.safeParse(value.email).success) {
+        context.addIssue({ code: "custom", path: ["email"], message: "邮箱格式不正确" });
+      }
+      return;
+    }
+    if (!value.opSecret) {
+      context.addIssue({ code: "custom", path: ["opSecret"], message: "OP卡密不能为空" });
+    }
+  })
+  .transform((value) => ({
+    ...value,
+    email: value.accountKind === "email" ? value.email : ""
+  }));
+
 export const AccountPatchSchema = AccountEditableFieldsSchema.partial()
   .extend({
     mobile: MobileValueSchema.optional(),
@@ -173,7 +198,7 @@ export type AccountDto = {
   secUid: string;
   registeredAt: string;
   opName: string;
-  hasOpSecret: true;
+  hasOpSecret: boolean;
   accountPassword: string;
   readonly shortOpCode: string;
   readonly opProject: "douyin";

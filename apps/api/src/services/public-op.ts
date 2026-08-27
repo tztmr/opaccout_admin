@@ -11,9 +11,9 @@ import { buildOpWakeUrl } from "./op-wake-url";
 
 type PublicOpRecord = {
   shortOpCode?: string;
-  opExpiresAt: Date;
+  opExpiresAt?: Date;
   accountStatus: string;
-  opSecret: EncryptedValue;
+  opSecret?: EncryptedValue;
   opProject?: string;
 };
 
@@ -50,7 +50,7 @@ export function createPublicOpService({
       }
 
       const project = OP_PROJECTS[account.opProject as keyof typeof OP_PROJECTS];
-      if (!project) return null;
+      if (!project || !account.opSecret || !account.opExpiresAt) return null;
 
       try {
         const opData = cipher.decrypt(account.opSecret);

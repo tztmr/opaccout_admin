@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type AccountInput,
+  AccountImportInputSchema,
   AccountPatchSchema,
   AccountInputSchema,
   AccountListQuerySchema,
@@ -242,6 +243,34 @@ describe("AccountInputSchema", () => {
     expect(
       AccountListQuerySchema.parse({ saleStatus: "unknown" }).saleStatus
     ).toBe("unknown");
+  });
+});
+
+describe("AccountImportInputSchema", () => {
+  const base = {
+    douyinId: "94946893573",
+    registeredAt: "2026-07-27",
+    opName: "",
+    owner: "小王",
+    saleStatus: "unsold" as const,
+    remark: ""
+  };
+
+  it("allows an email import row without an OP secret", () => {
+    expect(AccountImportInputSchema.parse({
+      ...base,
+      accountKind: "email",
+      email: "mail@example.com",
+      opSecret: ""
+    })).toMatchObject({ accountKind: "email", opSecret: "" });
+  });
+
+  it("keeps OP secret required for Google imports", () => {
+    expect(() => AccountImportInputSchema.parse({
+      ...base,
+      accountKind: "google",
+      opSecret: ""
+    })).toThrow("OP卡密不能为空");
   });
 });
 

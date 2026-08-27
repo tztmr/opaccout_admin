@@ -36,6 +36,27 @@ describe("Setting model", () => {
 });
 
 describe("Account model", () => {
+  it("allows imported email accounts to omit OP-derived fields", async () => {
+    const account = new AccountModel({
+      douyinId: "94946893573",
+      accountKind: "email",
+      email: "mail@example.com",
+      secUid: "",
+      registeredAt: new Date("2026-07-28T00:00:00.000Z"),
+      opName: "",
+      owner: "小王",
+      saleStatus: "unknown",
+      accountStatus: "unknown",
+      accountCheckedAt: new Date(),
+      remark: ""
+    });
+
+    await expect(account.validate()).resolves.toBeUndefined();
+    expect(account.opSecret).toBeUndefined();
+    expect(account.opExpiresAt).toBeUndefined();
+    expect(account.shortOpCode).toBeUndefined();
+  });
+
   it("defines unique identity indexes", () => {
     const indexes = AccountModel.schema.indexes();
     const douyinIndex = indexes.find(([keys]) => keys.douyinId === 1);

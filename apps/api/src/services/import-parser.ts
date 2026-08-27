@@ -1,5 +1,5 @@
 import {
-  AccountInputSchema,
+  AccountImportInputSchema,
   DEFAULT_OP_PROJECT,
   DEFAULT_REGISTERED_REGION,
   type AccountKind,
@@ -191,7 +191,7 @@ export function parseImport(
       remark: String(source["备注"] ?? "").trim(),
       opProject: PROJECT_MAP[projectLabel] ?? projectLabel
     };
-    const parsed = AccountInputSchema.safeParse(candidate);
+    const parsed = AccountImportInputSchema.safeParse(candidate);
     if (!parsed.success) {
       for (const issue of parsed.error.issues) {
         errors.push({
@@ -202,15 +202,17 @@ export function parseImport(
         });
       }
     } else {
-      try {
-        calculateOpExpiry(parsed.data.opSecret);
-      } catch {
-        errors.push({
-          row: rowNumber,
-          field: "opSecret",
-          code: "OP_SECRET_TIMESTAMP_INVALID",
-          message: "OP卡密最后一段必须是10位时间戳"
-        });
+      if (parsed.data.opSecret) {
+        try {
+          calculateOpExpiry(parsed.data.opSecret);
+        } catch {
+          errors.push({
+            row: rowNumber,
+            field: "opSecret",
+            code: "OP_SECRET_TIMESTAMP_INVALID",
+            message: "OP卡密最后一段必须是10位时间戳"
+          });
+        }
       }
       rows.push(parsed.data);
     }

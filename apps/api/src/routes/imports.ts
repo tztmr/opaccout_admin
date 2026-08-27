@@ -70,7 +70,7 @@ export function createImportsRouter(cipher: SecretCipher): Router {
         const { accountPassword, ...fields } = row;
         return {
           ...fields,
-          opSecret: cipher.encrypt(row.opSecret),
+          opSecret: row.opSecret ? cipher.encrypt(row.opSecret) : undefined,
           accountPassword: accountPassword
             ? cipher.encrypt(accountPassword)
             : undefined
@@ -92,7 +92,10 @@ export function createImportsRouter(cipher: SecretCipher): Router {
         totalRows: parsed.totalRows,
         validRows: parsed.rows.length,
         errors: parsed.errors,
-        rows: parsed.rows.slice(0, 10).map((row) => ({ ...row, opSecret: "••••••" }))
+        rows: parsed.rows.slice(0, 10).map((row) => ({
+          ...row,
+          opSecret: row.opSecret ? "••••••" : ""
+        }))
       });
     } catch (error) { next(error); }
   });

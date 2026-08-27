@@ -29,6 +29,37 @@ describe("parseImport", () => {
     expect(result.errors).toEqual([]);
   });
 
+  it("allows an email account import row without an OP secret", () => {
+    const csv = [
+      "抖音号,邮箱,密码,注册时间,OP卡密,归属人",
+      "94946893573,mail@example.com,douyin-pass,2026-07-27,,小王"
+    ].join("\n");
+
+    const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv", "email");
+
+    expect(result.rows[0]).toMatchObject({
+      accountKind: "email",
+      email: "mail@example.com",
+      opSecret: ""
+    });
+    expect(result.errors).toEqual([]);
+  });
+
+  it("still rejects a Google account import row without an OP secret", () => {
+    const csv = [
+      "抖音号,注册时间,OP卡密,归属人",
+      "94946893573,2026-07-27,,小王"
+    ].join("\n");
+
+    const result = parseImport(Buffer.from(csv, "utf8"), "accounts.csv", "google");
+
+    expect(result.rows).toEqual([]);
+    expect(result.errors).toContainEqual(expect.objectContaining({
+      field: "opSecret",
+      message: "OP卡密不能为空"
+    }));
+  });
+
   it.each(["xls", "xlsx"] as const)("imports email account fields from %s", (bookType) => {
     const result = parseImport(workbookBuffer([{
       抖音号: "94946893573",
