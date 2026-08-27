@@ -151,7 +151,7 @@ export const AccountListQuerySchema = z
     page: z.coerce.number().int().min(1).default(1),
     pageSize: AccountPageSizeSchema.default(20),
     accountKind: AccountKindSchema.default("google"),
-    keyword: z.string().trim().max(5000).optional(),
+    keyword: z.string().trim().max(20000).optional(),
     sortDirection: SortDirectionSchema.default("asc"),
     saleStatus: SaleStatusSchema.optional(),
     accountStatus: AccountStatusSchema.optional(),

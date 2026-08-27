@@ -257,7 +257,11 @@ export function createAccountsService({
       const keywordRegex = query.keyword
         ? buildKeywordSearchRegex(query.keyword)
         : undefined;
-      if (keywordRegex) filter.searchText = keywordRegex;
+      if (requestedDouyinIds.length) {
+        filter.douyinId = { $in: requestedDouyinIds };
+      } else if (keywordRegex) {
+        filter.searchText = keywordRegex;
+      }
       if (query.saleStatus) filter.saleStatus = query.saleStatus;
       if (query.accountStatus) filter.accountStatus = query.accountStatus;
       if (query.owner) filter.owner = query.owner;

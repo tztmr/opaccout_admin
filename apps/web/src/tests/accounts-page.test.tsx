@@ -897,6 +897,50 @@ describe("accounts page", () => {
     ).toBe(true);
   }, 10000);
 
+  it("shows the API error instead of an empty-filter message when a search fails", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.startsWith("/api/accounts/owners")) return json({ items: [] });
+      if (path === "/api/accounts/query") {
+        return new Response(JSON.stringify({
+          error: {
+            code: "VALIDATION_FAILED",
+            message: "提交的数据不符合要求"
+          },
+          requestId: "request-id"
+        }), {
+          status: 400,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      if (path.startsWith("/api/accounts?")) {
+        return json({
+          items: [],
+          page: 1,
+          pageSize: 20,
+          total: 0,
+          totalPages: 1,
+          stats: { total: 0, unsold: 0, sold: 0, abnormal: 0 }
+        });
+      }
+      throw new Error(`Unhandled request: ${path}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderPage();
+    const searchBox = await screen.findByPlaceholderText(/一行一个/);
+    const longKeyword = Array.from(
+      { length: 701 },
+      (_, index) => String(20_000_000_000 + index)
+    ).join("\n");
+    fireEvent.change(searchBox, { target: { value: longKeyword } });
+
+    expect(
+      await screen.findByText("搜索失败：提交的数据不符合要求")
+    ).toBeInTheDocument();
+    expect(screen.queryByText("当前筛选无结果")).not.toBeInTheDocument();
+  });
+
   it("shows missing douyin ids after a multiline search", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);

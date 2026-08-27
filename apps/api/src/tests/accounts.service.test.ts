@@ -939,8 +939,14 @@ describe("accounts service", () => {
     expect(result.items).toEqual([
       expect.objectContaining({ accountKind: "email", email: "mail@example.com" })
     ]);
-    expect(find).toHaveBeenCalledWith({ accountKind: "email", searchText: expect.any(RegExp) });
-    expect(countDocuments).toHaveBeenCalledWith({ accountKind: "email", searchText: expect.any(RegExp) });
+    expect(find).toHaveBeenCalledWith({
+      accountKind: "email",
+      douyinId: { $in: ["94946893573", "93180119509"] }
+    });
+    expect(countDocuments).toHaveBeenCalledWith({
+      accountKind: "email",
+      douyinId: { $in: ["94946893573", "93180119509"] }
+    });
     expect(countDocuments).toHaveBeenCalledWith({
       accountKind: "email",
       accountStatus: { $in: ["violation", "banned", "op_invalid"] }
@@ -996,7 +1002,7 @@ describe("accounts service", () => {
     ]);
   });
 
-  it("matches each keyword line and defaults to ascending registered time order", async () => {
+  it("matches each non-id keyword line and defaults to ascending registered time order", async () => {
     const lean = vi.fn(async () => []);
     const query = {
       sort: vi.fn(),
@@ -1010,19 +1016,54 @@ describe("accounts service", () => {
     const find = vi.fn(() => query);
     const countDocuments = vi.fn(async () => 0);
     const aggregate = vi.fn(async () => []);
-    const distinct = vi.fn(async () => ["94946893573", "93180119509"]);
     const service = createAccountsService(
-      dependencies({ find, countDocuments, aggregate, distinct })
+      dependencies({ find, countDocuments, aggregate })
     );
 
-    await service.list({ keyword: "94946893573\n93180119509" });
+    await service.list({ keyword: "张三\nMS4wLjABAAAA-fixture" });
 
     const filter = ((find.mock.calls[0] as unknown[] | undefined)?.[0] ??
       {}) as Record<string, unknown>;
     expect(filter.searchText).toBeInstanceOf(RegExp);
-    expect((filter.searchText as RegExp).test("94946893573")).toBe(true);
-    expect((filter.searchText as RegExp).test("93180119509")).toBe(true);
+    expect((filter.searchText as RegExp).test("张三")).toBe(true);
+    expect((filter.searchText as RegExp).test("MS4wLjABAAAA-fixture")).toBe(true);
     expect(query.sort).toHaveBeenCalledWith({ registeredAt: 1, _id: 1 });
+  });
+
+  it("accepts 701 newline-separated Douyin ids and queries them exactly", async () => {
+    const douyinIds = Array.from(
+      { length: 701 },
+      (_, index) => String(20_000_000_000 + index)
+    );
+    const lean = vi.fn(async () => []);
+    const query = {
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      lean
+    };
+    query.sort.mockReturnValue(query);
+    query.skip.mockReturnValue(query);
+    query.limit.mockReturnValue(query);
+    const find = vi.fn(() => query);
+    const countDocuments = vi.fn(async () => 0);
+    const aggregate = vi.fn(async () => []);
+    const distinct = vi.fn(async () => []);
+    const service = createAccountsService(
+      dependencies({ find, countDocuments, aggregate, distinct })
+    );
+
+    await service.list({ keyword: douyinIds.join("\n") });
+
+    const filter = ((find.mock.calls[0] as unknown[] | undefined)?.[0] ??
+      {}) as Record<string, unknown>;
+    expect(filter).not.toHaveProperty("searchText");
+    expect(filter).toMatchObject({
+      douyinId: {
+        $in: expect.arrayContaining(["20000000000", "20000000700"])
+      }
+    });
+    expect((filter.douyinId as { $in: string[] }).$in).toHaveLength(701);
   });
 
   it("returns missing douyin ids for multiline keyword searches", async () => {
